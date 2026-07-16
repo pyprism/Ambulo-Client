@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <!--
+    If you are serving your web app in a path other than the root, change the
+    href value below to reflect the base path you are serving from.
+
+    The path provided below has to start and end with a slash "/" in order for
+    it to work correctly.
+
+    For more details:
+    * https://developer.mozilla.org/en-US/docs/Web/HTML/Element/base
+
+    This is a placeholder for base href that will be replaced by the value of
+    the `--base-href` argument provided to `flutter build`.
+  -->
+  <base href="$FLUTTER_BASE_HREF">
+
+  <meta charset="UTF-8">
+  <meta content="IE=Edge" http-equiv="X-UA-Compatible">
+  <meta name="description" content="A new Flutter project.">
+
+  <!-- iOS meta tags & icons -->
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <meta name="apple-mobile-web-app-title" content="ambulo">
+  <link rel="apple-touch-icon" href="icons/Icon-192.png">
+
+  <!-- Favicon -->
+  <link rel="icon" type="image/png" href="favicon.png"/>
+
+  <title>Ambulo</title>
+  <link rel="manifest" href="manifest.json">
+
+  <style>
+    /* Shown while the engine + app assets download; removed on first frame. */
+    #ambulo-loading {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+      background: #272822;
+      color: #f8f8f2;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      transition: opacity 0.25s ease;
+      z-index: 9999;
+    }
+    @media (prefers-color-scheme: light) {
+      #ambulo-loading {
+        background: #ffffff;
+        color: #272822;
+      }
+      #ambulo-loading .ambulo-spinner {
+        border-color: rgba(39, 40, 34, 0.15);
+        border-top-color: #5c8a00;
+      }
+    }
+    #ambulo-loading.ambulo-loading-hidden {
+      opacity: 0;
+      pointer-events: none;
+    }
+    #ambulo-loading .ambulo-spinner {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      border: 3px solid rgba(248, 248, 242, 0.15);
+      border-top-color: #a6e22e;
+      animation: ambulo-spin 0.8s linear infinite;
+    }
+    #ambulo-loading .ambulo-label {
+      font-size: 14px;
+      letter-spacing: 0.02em;
+      opacity: 0.75;
+    }
+    @keyframes ambulo-spin {
+      to { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body>
+  <div id="ambulo-loading" role="status" aria-live="polite">
+    <div class="ambulo-spinner"></div>
+    <div class="ambulo-label">Loading Ambulo…</div>
+  </div>
+
+  <!--
+    You can customize the "flutter_bootstrap.js" script.
+    This is useful to provide a custom configuration to the Flutter loader
+    or to give the user feedback during the initialization process.
+
+    For more details:
+    * https://docs.flutter.dev/platform-integration/web/initialization
+  -->
+  <script src="flutter_bootstrap.js" async></script>
+  <script>
+    function ambuloHideLoading() {
+      var el = document.getElementById('ambulo-loading');
+      if (!el) return;
+      el.classList.add('ambulo-loading-hidden');
+      setTimeout(function () { el.remove(); }, 300);
+    }
+    // Dispatched by the Flutter web engine once the first frame is painted.
+    window.addEventListener('flutter-first-frame', ambuloHideLoading);
+    // Defensive fallback in case that event is ever missed.
+    setTimeout(ambuloHideLoading, 15000);
+  </script>
+</body>
+</html>
