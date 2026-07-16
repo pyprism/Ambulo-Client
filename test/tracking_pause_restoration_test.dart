@@ -14,37 +14,31 @@ import 'package:ambulo/features/tracking/monitoring_mode_controller.dart';
 import 'package:ambulo/features/tracking/tracking_pause_controller.dart';
 
 void main() {
-  test(
-    'TrackingPauseController reports the synchronous default before '
-    'restore, and the persisted value only after `ready`',
-    () async {
-      SharedPreferences.setMockInitialValues({'tracking_paused': true});
-      final container = ProviderContainer();
-      addTearDown(container.dispose);
+  test('TrackingPauseController reports the synchronous default before '
+      'restore, and the persisted value only after `ready`', () async {
+    SharedPreferences.setMockInitialValues({'tracking_paused': true});
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
 
-      expect(container.read(trackingPausedProvider), isFalse);
+    expect(container.read(trackingPausedProvider), isFalse);
 
-      await container.read(trackingPausedProvider.notifier).ready;
+    await container.read(trackingPausedProvider.notifier).ready;
 
-      expect(container.read(trackingPausedProvider), isTrue);
-    },
-  );
+    expect(container.read(trackingPausedProvider), isTrue);
+  });
 
-  test(
-    'MonitoringModeController reports the synchronous default before '
-    'restore, and the persisted value only after `ready`',
-    () async {
-      SharedPreferences.setMockInitialValues({'monitoring_mode': 'move'});
-      final container = ProviderContainer();
-      addTearDown(container.dispose);
+  test('MonitoringModeController reports the synchronous default before '
+      'restore, and the persisted value only after `ready`', () async {
+    SharedPreferences.setMockInitialValues({'monitoring_mode': 'move'});
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
 
-      expect(container.read(monitoringModeProvider), MonitoringMode.quit);
+    expect(container.read(monitoringModeProvider), MonitoringMode.quit);
 
-      await container.read(monitoringModeProvider.notifier).ready;
+    await container.read(monitoringModeProvider.notifier).ready;
 
-      expect(container.read(monitoringModeProvider), MonitoringMode.move);
-    },
-  );
+    expect(container.read(monitoringModeProvider), MonitoringMode.move);
+  });
 
   test(
     'a mode/pause apply gated on both `ready` futures (the pattern used by '

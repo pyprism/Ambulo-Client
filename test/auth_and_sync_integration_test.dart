@@ -165,133 +165,145 @@ void main() {
     },
   );
 
-  test('conflict detection and "keep mine" resolution against the real server', () async {
-    TestWidgetsFlutterBinding.ensureInitialized();
-    HttpOverrides.global = null;
+  test(
+    'conflict detection and "keep mine" resolution against the real server',
+    () async {
+      TestWidgetsFlutterBinding.ensureInitialized();
+      HttpOverrides.global = null;
 
-    if (!await _serverReachable()) {
-      // ignore: avoid_print
-      print('Skipping: no live server at $_serverUrl');
-      return;
-    }
+      if (!await _serverReachable()) {
+        // ignore: avoid_print
+        print('Skipping: no live server at $_serverUrl');
+        return;
+      }
 
-    SharedPreferences.setMockInitialValues({});
+      SharedPreferences.setMockInitialValues({});
 
-    final container = ProviderContainer(
-      overrides: [
-        tokenStorageProvider.overrideWithValue(_FakeTokenStorage()),
-        appDatabaseProvider.overrideWithValue(
-          AppDatabase.forTesting(NativeDatabase.memory()),
-        ),
-      ],
-    );
-    addTearDown(container.dispose);
-
-    await container
-        .read(serverConfigProvider.notifier)
-        .setServerAddress(_serverUrl);
-
-    final uniqueSuffix = DateTime.now().microsecondsSinceEpoch;
-    final username = 'flutter_it_conflict_$uniqueSuffix';
-    final registerError = await container
-        .read(authControllerProvider.notifier)
-        .register(
-          username: username,
-          email: '$username@example.com',
-          password: 'Sup3rSecretPass!',
-        );
-    expect(registerError, isNull, reason: 'register failed: $registerError');
-
-    final db = container.read(appDatabaseProvider);
-    await db
-        .into(db.locationPoints)
-        .insert(
-          LocationPointsCompanion.insert(
-            latitude: 1,
-            longitude: 1,
-            recordedAt: DateTime.now().toUtc(),
-            monitoringMode: MonitoringMode.significant,
-            syncState: const Value(SyncState.pendingUpload),
-            source: RecordSource.location,
+      final container = ProviderContainer(
+        overrides: [
+          tokenStorageProvider.overrideWithValue(_FakeTokenStorage()),
+          appDatabaseProvider.overrideWithValue(
+            AppDatabase.forTesting(NativeDatabase.memory()),
           ),
-        );
-    final pointId = (await db.select(db.locationPoints).getSingle()).id;
+        ],
+      );
+      addTearDown(container.dispose);
 
-    // Get it synced once so it has a real server_rev.
-    final firstSyncError = await container
-        .read(syncControllerProvider.notifier)
-        .syncNow();
-    expect(firstSyncError, isNull, reason: 'initial sync failed: $firstSyncError');
-    final syncedRow = await (db.select(
-      db.locationPoints,
-    )..where((t) => t.id.equals(pointId))).getSingle();
-    expect(syncedRow.syncState, SyncState.synced);
-    final syncedServerRev = syncedRow.serverRev;
-    expect(syncedServerRev, isNotNull);
+      await container
+          .read(serverConfigProvider.notifier)
+          .setServerAddress(_serverUrl);
 
-    // Simulate a second device changing this record server-side (accepted,
-    // bumps server_rev) without this client knowing — reuse the same
-    // authenticated Dio client to make that write.
-    final otherDeviceResponse = await container
-        .read(dioProvider)
-        .post(
-          '/api/sync/upload/',
-          data: {
-            'records': {
-              'location_point': [
-                {
-                  'id': pointId,
-                  'local_rev': 1,
-                  'base_server_rev': syncedServerRev,
-                  'sync_state': 'synced',
-                  'source': 'location',
-                  'latitude': 9.0,
-                  'longitude': 9.0,
-                  'recorded_at': DateTime.now().toUtc().toIso8601String(),
-                  'connectivity': 'wifi',
-                  'monitoring_mode': 'significant',
-                },
-              ],
+      final uniqueSuffix = DateTime.now().microsecondsSinceEpoch;
+      final username = 'flutter_it_conflict_$uniqueSuffix';
+      final registerError = await container
+          .read(authControllerProvider.notifier)
+          .register(
+            username: username,
+            email: '$username@example.com',
+            password: 'Sup3rSecretPass!',
+          );
+      expect(registerError, isNull, reason: 'register failed: $registerError');
+
+      final db = container.read(appDatabaseProvider);
+      await db
+          .into(db.locationPoints)
+          .insert(
+            LocationPointsCompanion.insert(
+              latitude: 1,
+              longitude: 1,
+              recordedAt: DateTime.now().toUtc(),
+              monitoringMode: MonitoringMode.significant,
+              syncState: const Value(SyncState.pendingUpload),
+              source: RecordSource.location,
+            ),
+          );
+      final pointId = (await db.select(db.locationPoints).getSingle()).id;
+
+      // Get it synced once so it has a real server_rev.
+      final firstSyncError = await container
+          .read(syncControllerProvider.notifier)
+          .syncNow();
+      expect(
+        firstSyncError,
+        isNull,
+        reason: 'initial sync failed: $firstSyncError',
+      );
+      final syncedRow = await (db.select(
+        db.locationPoints,
+      )..where((t) => t.id.equals(pointId))).getSingle();
+      expect(syncedRow.syncState, SyncState.synced);
+      final syncedServerRev = syncedRow.serverRev;
+      expect(syncedServerRev, isNotNull);
+
+      // Simulate a second device changing this record server-side (accepted,
+      // bumps server_rev) without this client knowing — reuse the same
+      // authenticated Dio client to make that write.
+      final otherDeviceResponse = await container
+          .read(dioProvider)
+          .post(
+            '/api/sync/upload/',
+            data: {
+              'records': {
+                'location_point': [
+                  {
+                    'id': pointId,
+                    'local_rev': 1,
+                    'base_server_rev': syncedServerRev,
+                    'sync_state': 'synced',
+                    'source': 'location',
+                    'latitude': 9.0,
+                    'longitude': 9.0,
+                    'recorded_at': DateTime.now().toUtc().toIso8601String(),
+                    'connectivity': 'wifi',
+                    'monitoring_mode': 'significant',
+                  },
+                ],
+              },
             },
-          },
-        );
-    final otherDeviceBucket =
-        (otherDeviceResponse.data as Map<String, dynamic>)['location_point']
-            as Map<String, dynamic>;
-    expect((otherDeviceBucket['accepted'] as List), contains(pointId));
+          );
+      final otherDeviceBucket =
+          (otherDeviceResponse.data as Map<String, dynamic>)['location_point']
+              as Map<String, dynamic>;
+      expect((otherDeviceBucket['accepted'] as List), contains(pointId));
 
-    // Now make a conflicting local edit (still holding the stale server_rev)
-    // and try to sync it — the server must reject it as a conflict.
-    await (db.update(db.locationPoints)..where((t) => t.id.equals(pointId)))
-        .write(
-          const LocationPointsCompanion(
-            latitude: Value(5.0),
-            syncState: Value(SyncState.pendingUpload),
-          ),
-        );
+      // Now make a conflicting local edit (still holding the stale server_rev)
+      // and try to sync it — the server must reject it as a conflict.
+      await (db.update(
+        db.locationPoints,
+      )..where((t) => t.id.equals(pointId))).write(
+        const LocationPointsCompanion(
+          latitude: Value(5.0),
+          syncState: Value(SyncState.pendingUpload),
+        ),
+      );
 
-    final conflictSyncError = await container
-        .read(syncControllerProvider.notifier)
-        .syncNow();
-    expect(conflictSyncError, isNull);
+      final conflictSyncError = await container
+          .read(syncControllerProvider.notifier)
+          .syncNow();
+      expect(conflictSyncError, isNull);
 
-    final conflicted = await container
-        .read(syncRepositoryProvider)
-        .allConflicts();
-    expect(conflicted.map((c) => c.id), contains(pointId));
+      final conflicted = await container
+          .read(syncRepositoryProvider)
+          .allConflicts();
+      expect(conflicted.map((c) => c.id), contains(pointId));
 
-    // Resolve by keeping our version — must force-overwrite and end up synced.
-    final resolveError = await container
-        .read(syncControllerProvider.notifier)
-        .resolveKeepMine('location_point', pointId);
-    expect(resolveError, isNull, reason: 'resolveKeepMine failed: $resolveError');
+      // Resolve by keeping our version — must force-overwrite and end up synced.
+      final resolveError = await container
+          .read(syncControllerProvider.notifier)
+          .resolveKeepMine('location_point', pointId);
+      expect(
+        resolveError,
+        isNull,
+        reason: 'resolveKeepMine failed: $resolveError',
+      );
 
-    final resolvedRow = await (db.select(
-      db.locationPoints,
-    )..where((t) => t.id.equals(pointId))).getSingle();
-    expect(resolvedRow.syncState, SyncState.synced);
-    expect(resolvedRow.latitude, 5.0);
-  });
+      final resolvedRow = await (db.select(
+        db.locationPoints,
+      )..where((t) => t.id.equals(pointId))).getSingle();
+      expect(resolvedRow.syncState, SyncState.synced);
+      expect(resolvedRow.latitude, 5.0);
+    },
+  );
 
   test(
     'registration validation errors surface the real backend detail, not just the generic summary',

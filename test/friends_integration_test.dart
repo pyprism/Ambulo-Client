@@ -73,7 +73,9 @@ Future<ProviderContainer> _signedInContainer(String username) async {
       ),
     ],
   );
-  await container.read(serverConfigProvider.notifier).setServerAddress(_serverUrl);
+  await container
+      .read(serverConfigProvider.notifier)
+      .setServerAddress(_serverUrl);
   final error = await container
       .read(authControllerProvider.notifier)
       .register(
@@ -86,136 +88,125 @@ Future<ProviderContainer> _signedInContainer(String username) async {
 }
 
 void main() {
-  test(
-    'friend request, accept, share toggle, and poll-based location sharing '
-    'against the real server',
-    () async {
-      TestWidgetsFlutterBinding.ensureInitialized();
-      HttpOverrides.global = null;
+  test('friend request, accept, share toggle, and poll-based location sharing '
+      'against the real server', () async {
+    TestWidgetsFlutterBinding.ensureInitialized();
+    HttpOverrides.global = null;
 
-      if (!await _serverReachable()) {
-        // ignore: avoid_print
-        print('Skipping: no live server at $_serverUrl');
-        return;
-      }
+    if (!await _serverReachable()) {
+      // ignore: avoid_print
+      print('Skipping: no live server at $_serverUrl');
+      return;
+    }
 
-      SharedPreferences.setMockInitialValues({});
+    SharedPreferences.setMockInitialValues({});
 
-      final suffix = DateTime.now().microsecondsSinceEpoch;
-      final usernameA = 'flutter_friend_a_$suffix';
-      final usernameB = 'flutter_friend_b_$suffix';
+    final suffix = DateTime.now().microsecondsSinceEpoch;
+    final usernameA = 'flutter_friend_a_$suffix';
+    final usernameB = 'flutter_friend_b_$suffix';
 
-      final containerA = await _signedInContainer(usernameA);
-      final containerB = await _signedInContainer(usernameB);
-      addTearDown(containerA.dispose);
-      addTearDown(containerB.dispose);
+    final containerA = await _signedInContainer(usernameA);
+    final containerB = await _signedInContainer(usernameB);
+    addTearDown(containerA.dispose);
+    addTearDown(containerB.dispose);
 
-      // A sends a request to B by username.
-      final friendRepoA = containerA.read(friendRepositoryProvider);
-      final friendRepoB = containerB.read(friendRepositoryProvider);
+    // A sends a request to B by username.
+    final friendRepoA = containerA.read(friendRepositoryProvider);
+    final friendRepoB = containerB.read(friendRepositoryProvider);
 
-      final sent = await friendRepoA.sendRequest(username: usernameB);
-      expect(sent.status, FriendshipStatus.pending);
+    final sent = await friendRepoA.sendRequest(username: usernameB);
+    expect(sent.status, FriendshipStatus.pending);
 
-      // B should see it as an incoming request, and a friend_request
-      // notification.
-      final bFriendships = await friendRepoB.listFriendships();
-      final incoming = bFriendships.singleWhere(
-        (f) => f.isIncomingRequest(usernameB),
-      );
-      expect(incoming.otherUsername(usernameB), usernameA);
+    // B should see it as an incoming request, and a friend_request
+    // notification.
+    final bFriendships = await friendRepoB.listFriendships();
+    final incoming = bFriendships.singleWhere(
+      (f) => f.isIncomingRequest(usernameB),
+    );
+    expect(incoming.otherUsername(usernameB), usernameA);
 
-      final bNotifications = await friendRepoB.listNotifications();
-      expect(
-        bNotifications.any(
-          (n) =>
-              n.type == AppNotificationType.friendRequest &&
-              n.payload['from_username'] == usernameA,
-        ),
-        isTrue,
-      );
+    final bNotifications = await friendRepoB.listNotifications();
+    expect(
+      bNotifications.any(
+        (n) =>
+            n.type == AppNotificationType.friendRequest &&
+            n.payload['from_username'] == usernameA,
+      ),
+      isTrue,
+    );
 
-      // B accepts.
-      final accepted = await friendRepoB.accept(incoming.id);
-      expect(accepted.status, FriendshipStatus.accepted);
+    // B accepts.
+    final accepted = await friendRepoB.accept(incoming.id);
+    expect(accepted.status, FriendshipStatus.accepted);
 
-      // A seeds and syncs a location point; sharing defaults on, so B
-      // should see it via the poll-based friends'-locations endpoint.
-      final dbA = containerA.read(appDatabaseProvider);
-      await dbA
-          .into(dbA.locationPoints)
-          .insert(
-            LocationPointsCompanion.insert(
-              latitude: 10.0,
-              longitude: 20.0,
-              recordedAt: DateTime.now().toUtc(),
-              monitoringMode: MonitoringMode.significant,
-              syncState: const Value(SyncState.pendingUpload),
-              source: RecordSource.location,
-            ),
-          );
-      final syncErrorA = await containerA
-          .read(syncControllerProvider.notifier)
-          .syncNow();
-      expect(syncErrorA, isNull, reason: 'sync failed: $syncErrorA');
+    // A seeds and syncs a location point; sharing defaults on, so B
+    // should see it via the poll-based friends'-locations endpoint.
+    final dbA = containerA.read(appDatabaseProvider);
+    await dbA
+        .into(dbA.locationPoints)
+        .insert(
+          LocationPointsCompanion.insert(
+            latitude: 10.0,
+            longitude: 20.0,
+            recordedAt: DateTime.now().toUtc(),
+            monitoringMode: MonitoringMode.significant,
+            syncState: const Value(SyncState.pendingUpload),
+            source: RecordSource.location,
+          ),
+        );
+    final syncErrorA = await containerA
+        .read(syncControllerProvider.notifier)
+        .syncNow();
+    expect(syncErrorA, isNull, reason: 'sync failed: $syncErrorA');
 
-      final locationsForB = await friendRepoB.friendLocations();
-      final aLocation = locationsForB.singleWhere(
-        (l) => l.username == usernameA,
-      );
-      expect(aLocation.latitude, 10.0);
-      expect(aLocation.longitude, 20.0);
+    final locationsForB = await friendRepoB.friendLocations();
+    final aLocation = locationsForB.singleWhere((l) => l.username == usernameA);
+    expect(aLocation.latitude, 10.0);
+    expect(aLocation.longitude, 20.0);
 
-      // A turns sharing off; B should no longer see A's location.
-      final aFriendships = await friendRepoA.listFriendships();
-      final fromA = aFriendships.singleWhere(
-        (f) => f.otherUsername(usernameA) == usernameB,
-      );
-      await friendRepoA.setShare(fromA.id, false);
+    // A turns sharing off; B should no longer see A's location.
+    final aFriendships = await friendRepoA.listFriendships();
+    final fromA = aFriendships.singleWhere(
+      (f) => f.otherUsername(usernameA) == usernameB,
+    );
+    await friendRepoA.setShare(fromA.id, false);
 
-      final locationsForBAfter = await friendRepoB.friendLocations();
-      expect(
-        locationsForBAfter.any((l) => l.username == usernameA),
-        isFalse,
-      );
-    },
-  );
+    final locationsForBAfter = await friendRepoB.friendLocations();
+    expect(locationsForBAfter.any((l) => l.username == usernameA), isFalse);
+  });
 
-  test(
-    'location retention days round-trips through the real server',
-    () async {
-      TestWidgetsFlutterBinding.ensureInitialized();
-      HttpOverrides.global = null;
+  test('location retention days round-trips through the real server', () async {
+    TestWidgetsFlutterBinding.ensureInitialized();
+    HttpOverrides.global = null;
 
-      if (!await _serverReachable()) {
-        // ignore: avoid_print
-        print('Skipping: no live server at $_serverUrl');
-        return;
-      }
+    if (!await _serverReachable()) {
+      // ignore: avoid_print
+      print('Skipping: no live server at $_serverUrl');
+      return;
+    }
 
-      SharedPreferences.setMockInitialValues({});
-      final container = await _signedInContainer(
-        'flutter_retention_${DateTime.now().microsecondsSinceEpoch}',
-      );
-      addTearDown(container.dispose);
+    SharedPreferences.setMockInitialValues({});
+    final container = await _signedInContainer(
+      'flutter_retention_${DateTime.now().microsecondsSinceEpoch}',
+    );
+    addTearDown(container.dispose);
 
-      final error = await container
-          .read(authControllerProvider.notifier)
-          .setLocationRetentionDays(30);
-      expect(error, isNull);
-      expect(
-        container.read(authControllerProvider).value!.locationRetentionDays,
-        30,
-      );
+    final error = await container
+        .read(authControllerProvider.notifier)
+        .setLocationRetentionDays(30);
+    expect(error, isNull);
+    expect(
+      container.read(authControllerProvider).value!.locationRetentionDays,
+      30,
+    );
 
-      final clearError = await container
-          .read(authControllerProvider.notifier)
-          .setLocationRetentionDays(null);
-      expect(clearError, isNull);
-      expect(
-        container.read(authControllerProvider).value!.locationRetentionDays,
-        isNull,
-      );
-    },
-  );
+    final clearError = await container
+        .read(authControllerProvider.notifier)
+        .setLocationRetentionDays(null);
+    expect(clearError, isNull);
+    expect(
+      container.read(authControllerProvider).value!.locationRetentionDays,
+      isNull,
+    );
+  });
 }

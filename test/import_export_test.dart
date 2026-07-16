@@ -130,8 +130,10 @@ void main() {
     );
   });
 
-  test('GeoJSON with non-numeric coordinates skips only the bad feature', () async {
-    const geoJson = '''
+  test(
+    'GeoJSON with non-numeric coordinates skips only the bad feature',
+    () async {
+      const geoJson = '''
 {
   "type": "FeatureCollection",
   "features": [
@@ -148,11 +150,12 @@ void main() {
   ]
 }
 ''';
-    final repo = ImportRepository(db);
-    final preview = await repo.parseAndPreview('trip.geojson', geoJson);
-    expect(preview.newPoints, hasLength(1));
-    expect(preview.skippedCount, 1);
-  });
+      final repo = ImportRepository(db);
+      final preview = await repo.parseAndPreview('trip.geojson', geoJson);
+      expect(preview.newPoints, hasLength(1));
+      expect(preview.skippedCount, 1);
+    },
+  );
 
   test('Ambulo JSON with a bad numeric field skips only that record', () async {
     const json = '''
