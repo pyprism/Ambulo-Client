@@ -53,6 +53,12 @@ class SyncRepository {
   static const _lastSyncKey = 'sync_last_sync_at';
   static const _downloadBatchGuard = 50;
 
+  // Keeps each upload request bounded regardless of backlog size — an
+  // unbounded single request can exceed the server's request body limit
+  // (Django's DATA_UPLOAD_MAX_MEMORY_SIZE), which would otherwise wedge
+  // sync permanently since every retry rebuilds the same oversized request.
+  static const _uploadChunkSize = 500;
+
   Future<int> _cursor(String typeName) async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getInt('$_cursorKeyPrefix$typeName') ?? 0;
@@ -96,26 +102,49 @@ class SyncRepository {
   }
 
   Future<void> _uploadAll() async {
-    final recordsByType = <String, List<Map<String, dynamic>>>{};
+    final pendingByType = <String, List<Map<String, dynamic>>>{};
     for (final handler in _handlers) {
       final pending = await handler.pendingWireRecords();
-      if (pending.isNotEmpty) recordsByType[handler.typeName] = pending;
+      if (pending.isNotEmpty) pendingByType[handler.typeName] = pending;
     }
-    if (recordsByType.isEmpty) return;
 
-    final response = await _dio.post(
-      '/api/sync/upload/',
-      data: {'records': recordsByType},
-    );
-    final data = response.data as Map<String, dynamic>;
-    for (final handler in _handlers) {
-      final bucket = data[handler.typeName] as Map<String, dynamic>?;
-      if (bucket == null) continue;
-      await handler.applyUploadResult(
-        accepted: (bucket['accepted'] as List).cast<String>(),
-        conflicts: (bucket['conflicts'] as List).cast<String>(),
-        rejected: (bucket['rejected'] as List).cast<Map<String, dynamic>>(),
+    // Chunk across types, up to `_uploadChunkSize` records per request, and
+    // apply each chunk's result before building the next — so a backlog
+    // that fails partway through leaves the already-applied chunks synced
+    // instead of being retried from scratch.
+    while (pendingByType.isNotEmpty) {
+      final chunk = <String, List<Map<String, dynamic>>>{};
+      var budget = _uploadChunkSize;
+      final drainedTypes = <String>[];
+      for (final entry in pendingByType.entries) {
+        if (budget <= 0) break;
+        final take = entry.value.length < budget ? entry.value.length : budget;
+        chunk[entry.key] = entry.value.sublist(0, take);
+        budget -= take;
+        if (take == entry.value.length) {
+          drainedTypes.add(entry.key);
+        } else {
+          pendingByType[entry.key] = entry.value.sublist(take);
+        }
+      }
+      for (final typeName in drainedTypes) {
+        pendingByType.remove(typeName);
+      }
+
+      final response = await _dio.post(
+        '/api/sync/upload/',
+        data: {'records': chunk},
       );
+      final data = response.data as Map<String, dynamic>;
+      for (final handler in _handlers) {
+        final bucket = data[handler.typeName] as Map<String, dynamic>?;
+        if (bucket == null) continue;
+        await handler.applyUploadResult(
+          accepted: (bucket['accepted'] as List).cast<String>(),
+          conflicts: (bucket['conflicts'] as List).cast<String>(),
+          rejected: (bucket['rejected'] as List).cast<Map<String, dynamic>>(),
+        );
+      }
     }
   }
 
