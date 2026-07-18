@@ -53,8 +53,13 @@ final locationTrackingServiceProvider = Provider<LocationTrackingService>((
   // persisted value loads from SharedPreferences — applying that
   // provisional default straight to a real sensor stream would briefly
   // start (or fail to pause) tracking. Wait for the real restored values
-  // before the very first apply; later reactive applies above don't need
-  // this since `ready` has long since resolved by then.
+  // before this first apply.
+  //
+  // Note this does NOT prevent a concurrent apply: each controller's
+  // `_restore` sets `state` (firing the `ref.listen` applies above) *before*
+  // completing its `ready` future, so the listen-driven applies race ahead
+  // of this gated one at startup. `LocationTrackingService.applyMode`
+  // serializes internally so that race can't leak two parallel streams.
   Future.wait([
     ref.read(monitoringModeProvider.notifier).ready,
     ref.read(trackingPausedProvider.notifier).ready,
