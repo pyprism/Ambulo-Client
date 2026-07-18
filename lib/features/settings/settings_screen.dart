@@ -9,6 +9,8 @@ import '../../core/theme/theme_mode_controller.dart';
 import '../../data/local/database_provider.dart';
 import '../../data/local/tables/location_points_table.dart';
 import '../../platform/platform_support.dart';
+import '../../platform/fitness/step_tracking_provider.dart';
+import '../../platform/fitness/step_tracking_service.dart';
 import '../../platform/location/location_tracking_provider.dart';
 import '../../platform/location/location_tracking_service.dart';
 import '../auth/auth_controller.dart';
@@ -26,6 +28,7 @@ class SettingsScreen extends ConsumerWidget {
     final monitoringMode = ref.watch(monitoringModeProvider);
     final isPaused = ref.watch(trackingPausedProvider);
     final trackingStatus = ref.watch(locationTrackingStatusProvider);
+    final stepStatus = ref.watch(stepTrackingStatusProvider);
     final authUser = ref.watch(authControllerProvider).value;
     final serverAddress = ref.watch(serverConfigProvider).value;
 
@@ -141,12 +144,27 @@ class SettingsScreen extends ConsumerWidget {
                       const SizedBox(height: 12),
                       _TrackingProblemBanner(status: trackingStatus),
                     ],
+                    if (!isPaused &&
+                        stepStatus == StepTrackingStatus.permissionDenied) ...[
+                      const SizedBox(height: 12),
+                      const _StepTrackingProblemBanner(),
+                    ],
+                    const SizedBox(height: 8),
+                    Text(
+                      'Steps count continuously in the background '
+                      'regardless of mode — the step-counter sensor is '
+                      'low-power, unlike GPS.',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(context).colorScheme.outline,
+                      ),
+                    ),
                     const Divider(height: 24),
                     SwitchListTile(
                       contentPadding: EdgeInsets.zero,
                       title: const Text('Pause tracking (incognito)'),
                       subtitle: const Text(
-                        'Temporarily stop all collection without losing your mode setting',
+                        'Temporarily stop all collection (location and '
+                        'steps) without losing your mode setting',
                       ),
                       value: isPaused,
                       onChanged: (value) => ref
@@ -272,8 +290,11 @@ class SettingsScreen extends ConsumerWidget {
 
   String _modeDescription(MonitoringMode mode) => switch (mode) {
     MonitoringMode.quit =>
-      'No tracking, all sensors off. Local data stays viewable and manual sync still works.',
-    MonitoringMode.manual => 'Collect only when you explicitly tap to record.',
+      'No location tracking. Local data stays viewable and manual sync '
+          'still works. Steps keep counting regardless of mode.',
+    MonitoringMode.manual =>
+      'Location collected only when you explicitly tap to record. Steps '
+          'keep counting regardless of mode.',
     MonitoringMode.significant =>
       'Coarse, low-power tracking using OS significant-change detection.',
     MonitoringMode.move =>
@@ -439,6 +460,51 @@ class _TrackingProblemBanner extends StatelessWidget {
                     child: Text(action.$1),
                   ),
                 ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _StepTrackingProblemBanner extends StatelessWidget {
+  const _StepTrackingProblemBanner();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.errorContainer,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            Icons.warning_amber_outlined,
+            color: Theme.of(context).colorScheme.onErrorContainer,
+            size: 20,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Step-counting permission was denied, so steps aren\'t '
+                  'being recorded.',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onErrorContainer,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                TextButton(
+                  onPressed: () => Geolocator.openAppSettings(),
+                  child: const Text('Grant permission'),
+                ),
               ],
             ),
           ),
