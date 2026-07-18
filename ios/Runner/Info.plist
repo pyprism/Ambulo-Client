@@ -30,10 +30,17 @@
 	<string>Ambulo uses your location to record your position on the map while a monitoring mode is active.</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
 	<string>Ambulo can track your location in the background in Move mode, shown by a visible indicator while active.</string>
+	<key>NSMotionUsageDescription</key>
+	<string>Ambulo reads your step count from the motion sensor to show steps on your dashboard.</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>location</string>
 	</array>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsArbitraryLoads</key>
+		<true/>
+	</dict>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
