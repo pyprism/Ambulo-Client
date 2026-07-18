@@ -11,6 +11,7 @@ import '../../shared/widgets/goal_ring.dart';
 import '../fitness/fitness_providers.dart';
 import '../fitness/goals_provider.dart';
 import '../tracking/monitoring_mode_controller.dart';
+import '../tracking/tracking_pause_controller.dart';
 
 class DashboardScreen extends ConsumerWidget {
   const DashboardScreen({super.key});
@@ -20,6 +21,9 @@ class DashboardScreen extends ConsumerWidget {
     final today = ref.watch(todayStatsProvider);
     final weekly = ref.watch(weeklyStatsProvider);
     final activeGoals = ref.watch(activeGoalsProvider).value ?? const [];
+    final isPaused = PlatformSupport.supportsSensorCollection
+        ? ref.watch(trackingPausedProvider)
+        : null;
 
     return Scaffold(
       appBar: AppBar(title: const Text('Dashboard')),
@@ -39,6 +43,8 @@ class DashboardScreen extends ConsumerWidget {
           return ListView(
             padding: const EdgeInsets.all(16),
             children: [
+              if (isPaused != null)
+                _StepTrackingLimitationNotice(isPaused: isPaused),
               if (!hasAnyData)
                 const Padding(
                   padding: EdgeInsets.only(bottom: 16),
@@ -171,6 +177,55 @@ class DashboardScreen extends ConsumerWidget {
   }
 }
 
+/// Steps count continuously regardless of monitoring mode (like Google
+/// Fit) — only the incognito pause toggle turns them off. This still can't
+/// promise Google Fit's persistent system-service parity: the sensor
+/// listener only runs while the Flutter engine is alive, so a day the app
+/// is force-closed or never opened may not be counted.
+class _StepTrackingLimitationNotice extends StatelessWidget {
+  const _StepTrackingLimitationNotice({required this.isPaused});
+
+  final bool isPaused;
+
+  @override
+  Widget build(BuildContext context) {
+    final message = isPaused
+        ? 'Step tracking is paused (incognito) — turn it back on in '
+              'Settings to resume counting.'
+        : 'Steps count continuously in the background — a day the app is '
+              'force-closed or never opened may not be counted.';
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(
+              Icons.info_outline,
+              size: 20,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                message,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _StatCard extends StatelessWidget {
   const _StatCard({
     required this.icon,
@@ -284,12 +339,15 @@ class _BatteryImpactTile extends ConsumerWidget {
       MonitoringMode.quit => (
         Icons.battery_full,
         'None',
-        'Tracking is off — no battery impact.',
+        'Location tracking is off. Steps still count via the low-power '
+            'step-counter sensor — that\'s hardware-batched, not a radio, '
+            'so it doesn\'t add meaningful battery drain.',
       ),
       MonitoringMode.manual => (
         Icons.battery_full,
         'Minimal',
-        'Only uses power when you explicitly record something.',
+        'Location is only recorded when you explicitly tap to record; '
+            'steps keep counting in the background at no real battery cost.',
       ),
       MonitoringMode.significant => (
         Icons.battery_5_bar,
