@@ -49,12 +49,40 @@ class LocationTrackingService {
   final _battery = Battery();
   late final _geofences = GeofenceService(_db);
 
+  // applyMode/dispose tear down and rebuild the single position stream, so
+  // two of them running concurrently would each cancel a null subscription,
+  // then each open a stream — the second overwrites `_subscription`, leaking
+  // the first as an uncancelled parallel stream whose interleaved async
+  // callbacks corrupt the in-memory segment/trip state (every point starts a
+  // fresh 0-distance segment). At app start this genuinely happens: the
+  // provider fires an apply from `ref.listen(monitoringMode)` /
+  // `ref.listen(trackingPaused)` (both during their controller's restore)
+  // *and* from the ready-gated `Future.wait(...).then`. Chaining every
+  // mutation through this future serializes them, so a later apply fully
+  // awaits the previous one's teardown before starting.
+  Future<void> _mutations = Future<void>.value();
+
+  // A classification change must persist across this much wall-clock time
+  // before a new activity segment actually starts — otherwise a single
+  // noisy GPS point fragments activity history / active-minutes.
+  static const _minSegmentSwitchDuration = Duration(seconds: 45);
+
+  // A trip is split once the device stays within this radius for this long
+  // — otherwise a user who leaves Significant/Move on permanently gets one
+  // giant multi-day "trip".
+  static const _stationaryRadiusMeters = 50.0;
+  static const _tripStationaryGap = Duration(minutes: 20);
+
   // In-memory "current activity segment" / "current trip" state — only
   // tracked while a continuous stream is running (Significant/Move), not for
   // one-off manual fixes, which don't imply a sustained activity or trip.
   String? _currentSegmentId;
   ActivityType? _currentSegmentType;
+  ActivityType? _pendingSegmentType;
+  DateTime? _pendingSegmentSince;
   String? _currentTripId;
+  Position? _stationaryAnchor;
+  DateTime? _lastMovementAt;
   Position? _lastPosition;
 
   /// Whether the continuous position stream is currently running (i.e. a
@@ -62,12 +90,35 @@ class LocationTrackingService {
   /// diagnostics screen.
   bool get isActive => _subscription != null;
 
-  Future<LocationTrackingStatus> applyMode(MonitoringMode mode) async {
+  /// Serializes a mutation onto [_mutations] so concurrent apply/dispose
+  /// calls can't race the single position-stream teardown/rebuild. Errors
+  /// are isolated to the caller — the chain itself never breaks, so one
+  /// failed apply can't wedge every later one.
+  Future<T> _serialize<T>(Future<T> Function() action) {
+    final completer = Completer<T>();
+    _mutations = _mutations.then((_) async {
+      try {
+        completer.complete(await action());
+      } catch (e, st) {
+        completer.completeError(e, st);
+      }
+    });
+    return completer.future;
+  }
+
+  Future<LocationTrackingStatus> applyMode(MonitoringMode mode) =>
+      _serialize(() => _applyMode(mode));
+
+  Future<LocationTrackingStatus> _applyMode(MonitoringMode mode) async {
     await _subscription?.cancel();
     _subscription = null;
     await _closeCurrentSegment();
     await _closeCurrentTrip();
     _lastPosition = null;
+    _pendingSegmentType = null;
+    _pendingSegmentSince = null;
+    _stationaryAnchor = null;
+    _lastMovementAt = null;
 
     if (!PlatformSupport.supportsSensorCollection) {
       return LocationTrackingStatus.inactive;
@@ -86,26 +137,38 @@ class LocationTrackingService {
           locationSettings: _settingsFor(mode),
         ).listen(
           (position) async {
-            await _store(position, mode, RecordSource.location);
-            final previous = _lastPosition;
-            final delta = previous == null
-                ? 0.0
-                : haversineMeters(
-                    previous.latitude,
-                    previous.longitude,
-                    position.latitude,
-                    position.longitude,
-                  );
-            await _updateActivitySegment(position, delta);
-            await _updateTrip(position, delta);
-            await _geofences.checkTransitions(
-              latitude: position.latitude,
-              longitude: position.longitude,
-              recordedAt: position.timestamp,
-            );
-            _lastPosition = position;
+            try {
+              await _store(position, mode, RecordSource.location);
+              final previous = _lastPosition;
+              final delta = previous == null
+                  ? 0.0
+                  : haversineMeters(
+                      previous.latitude,
+                      previous.longitude,
+                      position.latitude,
+                      position.longitude,
+                    );
+              // Advance immediately after computing delta (which already
+              // captured `previous`): the callback is unawaited by the
+              // stream, so if anything below throws, `_lastPosition` must
+              // still move forward or every later delta stays 0.
+              _lastPosition = position;
+              await _updateActivitySegment(position, delta);
+              await _checkStationaryGap(position);
+              await _updateTrip(position, delta);
+              await _geofences.checkTransitions(
+                latitude: position.latitude,
+                longitude: position.longitude,
+                recordedAt: position.timestamp,
+              );
+            } catch (e, st) {
+              // A throw here becomes an uncaught zone error (the stream's
+              // onError only sees *stream* errors, not callback throws), so
+              // it would otherwise vanish silently. Surface it instead.
+              debugPrint('location callback failed: $e\n$st');
+            }
           },
-          onError: (_) {},
+          onError: (e, st) => debugPrint('location stream error: $e\n$st'),
           cancelOnError: false,
         );
     return LocationTrackingStatus.active;
@@ -202,6 +265,7 @@ class LocationTrackingService {
             longitude: position.longitude,
             altitude: Value(position.altitude),
             horizontalAccuracy: Value(position.accuracy),
+            verticalAccuracy: Value(position.altitudeAccuracy),
             speed: Value(position.speed >= 0 ? position.speed : null),
             heading: Value(position.heading >= 0 ? position.heading : null),
             recordedAt: position.timestamp,
@@ -241,28 +305,62 @@ class LocationTrackingService {
   }
 
   /// Extends the current activity segment, or closes it and opens a new one
-  /// if the classified activity changed since the last point.
+  /// once the classified activity has changed *and* that change has
+  /// persisted for [_minSegmentSwitchDuration] — a single noisy GPS point
+  /// just extends the current segment instead of fragmenting it.
   Future<void> _updateActivitySegment(Position position, double delta) async {
-    final type = classifySpeed(position.speed >= 0 ? position.speed : null);
+    final type = classifySpeed(
+      position.speed >= 0 ? position.speed : null,
+      horizontalAccuracy: position.accuracy,
+    );
 
-    if (_currentSegmentId == null || _currentSegmentType != type) {
-      await _closeCurrentSegment();
-      final row = await _db
-          .into(_db.activitySamples)
-          .insertReturning(
-            ActivitySamplesCompanion.insert(
-              activityType: type,
-              startedAt: position.timestamp,
-              distanceMeters: const Value(0),
-              source: RecordSource.motion,
-              syncState: const Value(SyncState.pendingUpload),
-            ),
-          );
-      _currentSegmentId = row.id;
-      _currentSegmentType = type;
+    if (_currentSegmentId == null) {
+      _pendingSegmentType = null;
+      _pendingSegmentSince = null;
+      await _startSegment(type, position);
       return;
     }
 
+    if (type == _currentSegmentType) {
+      _pendingSegmentType = null;
+      _pendingSegmentSince = null;
+      await _extendCurrentSegment(position, delta);
+      return;
+    }
+
+    if (_pendingSegmentType != type) {
+      _pendingSegmentType = type;
+      _pendingSegmentSince = position.timestamp;
+    }
+    final pendingElapsed = position.timestamp.difference(_pendingSegmentSince!);
+    if (pendingElapsed < _minSegmentSwitchDuration) {
+      await _extendCurrentSegment(position, delta);
+      return;
+    }
+
+    _pendingSegmentType = null;
+    _pendingSegmentSince = null;
+    await _closeCurrentSegment();
+    await _startSegment(type, position);
+  }
+
+  Future<void> _startSegment(ActivityType type, Position position) async {
+    final row = await _db
+        .into(_db.activitySamples)
+        .insertReturning(
+          ActivitySamplesCompanion.insert(
+            activityType: type,
+            startedAt: position.timestamp,
+            distanceMeters: const Value(0),
+            source: RecordSource.motion,
+            syncState: const Value(SyncState.pendingUpload),
+          ),
+        );
+    _currentSegmentId = row.id;
+    _currentSegmentType = type;
+  }
+
+  Future<void> _extendCurrentSegment(Position position, double delta) async {
     final current = await (_db.select(
       _db.activitySamples,
     )..where((t) => t.id.equals(_currentSegmentId!))).getSingleOrNull();
@@ -280,6 +378,41 @@ class LocationTrackingService {
         syncState: bump.syncState,
       ),
     );
+  }
+
+  /// Closes the current trip once the device has stayed within
+  /// [_stationaryRadiusMeters] for [_tripStationaryGap] — splitting what
+  /// would otherwise be one unbounded trip for as long as tracking stays
+  /// on. The next point starts a fresh trip via [_updateTrip].
+  Future<void> _checkStationaryGap(Position position) async {
+    final anchor = _stationaryAnchor;
+    if (anchor == null) {
+      _stationaryAnchor = position;
+      _lastMovementAt = position.timestamp;
+      return;
+    }
+
+    final distanceFromAnchor = haversineMeters(
+      anchor.latitude,
+      anchor.longitude,
+      position.latitude,
+      position.longitude,
+    );
+    if (distanceFromAnchor > _stationaryRadiusMeters) {
+      _stationaryAnchor = position;
+      _lastMovementAt = position.timestamp;
+      return;
+    }
+
+    final lastMovement = _lastMovementAt;
+    if (_currentTripId != null && lastMovement != null) {
+      final gap = position.timestamp.difference(lastMovement);
+      if (gap >= _tripStationaryGap) {
+        await _closeCurrentTrip();
+        _stationaryAnchor = position;
+        _lastMovementAt = position.timestamp;
+      }
+    }
   }
 
   /// Starts a trip on the first point of a continuous tracking session,
@@ -403,9 +536,16 @@ class LocationTrackingService {
     _currentSegmentType = null;
   }
 
-  Future<void> dispose() async {
+  Future<void> dispose() => _serialize(_dispose);
+
+  Future<void> _dispose() async {
     await _subscription?.cancel();
+    _subscription = null;
     await _closeCurrentSegment();
     await _closeCurrentTrip();
+    _pendingSegmentType = null;
+    _pendingSegmentSince = null;
+    _stationaryAnchor = null;
+    _lastMovementAt = null;
   }
 }
