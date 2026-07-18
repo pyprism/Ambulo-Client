@@ -31,12 +31,15 @@ enum StepTrackingStatus { inactive, active, permissionDenied }
 /// DB writes are debounced (every [_flushEveryStepsCount] steps, or at a
 /// day/pause boundary) rather than one write per pedometer callback.
 class StepTrackingService {
+  // Params stay public-named (`deviceId`, `onUpdate`) rather than
+  // initializing formals, which would force callers to use the private
+  // field names (`_deviceId:`, `_onUpdate:`) as named-argument labels.
   StepTrackingService(
     this._db, {
     required Future<String> Function() deviceId,
     VoidCallback? onUpdate,
-  }) : _deviceId = deviceId,
-       _onUpdate = onUpdate;
+  }) : _deviceId = deviceId, // ignore: prefer_initializing_formals
+       _onUpdate = onUpdate; // ignore: prefer_initializing_formals
 
   final AppDatabase _db;
   final Future<String> Function() _deviceId;
