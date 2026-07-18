@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/router/app_router.dart';
 import '../core/theme/app_theme.dart';
 import '../core/theme/theme_mode_controller.dart';
+import '../features/fitness/fitness_providers.dart';
 import '../features/friends/friends_providers.dart';
 import '../platform/fitness/step_tracking_provider.dart';
 import '../platform/location/location_tracking_provider.dart';
@@ -37,6 +38,18 @@ class _AmbuloAppState extends ConsumerState<AmbuloApp>
       ref.invalidate(friendshipsProvider);
       ref.invalidate(friendLocationsProvider);
       ref.invalidate(notificationsProvider);
+      // Fitness stats are point-in-time queries — without this they'd keep
+      // showing whatever was true at first build (often 0) even though
+      // Significant/Move tracking may have kept recording in the
+      // background while the app was away.
+      ref.invalidate(todayStatsProvider);
+      ref.invalidate(weeklyStatsProvider);
+      ref.invalidate(monthlyStatsProvider);
+    } else if (state == AppLifecycleState.paused) {
+      // Steps buffer in memory between debounced DB flushes (see
+      // StepTrackingService) — flush on backgrounding so a buffered-but-
+      // unwritten count isn't lost if the OS kills the process outright.
+      ref.read(stepTrackingServiceProvider).flush();
     }
   }
 
