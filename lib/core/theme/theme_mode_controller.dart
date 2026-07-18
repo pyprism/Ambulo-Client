@@ -4,7 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 const _prefsKey = 'theme_mode';
 
-/// Persists the user's system/light/dark choice (SPEC §6.14).
+/// Persists the user's system/light/dark choice.
 class ThemeModeController extends Notifier<ThemeMode> {
   @override
   ThemeMode build() {
