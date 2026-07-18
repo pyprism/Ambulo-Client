@@ -28,12 +28,19 @@ const _movingActivityTypes = {
   ActivityType.cycling,
 };
 
+// GPS vertical error is routinely 10-30m, so ungated altitude deltas
+// generate phantom floors on flat ground; only trust readings at least this
+// accurate, and only credit a floor once a climb has been sustained across
+// more than one consecutive reading (a lone noisy point shouldn't count).
+const _maxVerticalAccuracyMeters = 10.0;
+const _floorHeightMeters = 3.0;
+const _minSustainedClimbPoints = 2;
+
 /// Local, on-device fitness rollups — computed on demand from
 /// HealthSamples/ActivitySamples/LocationPoints rather than a separate
 /// materialized rollup table, so it always reflects this device's data
 /// whether or not the server has been reached. Calorie/floor figures are
-/// explicit estimates (SPEC calls out "calorie estimate" and "activity
-/// estimate"), not clinical measurements.
+/// explicit estimates, not clinical measurements.
 class FitnessStatsRepository {
   FitnessStatsRepository(this._db);
 
@@ -46,15 +53,21 @@ class FitnessStatsRepository {
     final end = start.add(const Duration(days: 1));
     final now = DateTime.now();
 
-    final stepsRow =
-        await (_db.select(_db.healthSamples)..where(
-              (t) =>
-                  t.metricType.equalsValue(HealthMetricType.steps) &
-                  t.recordedAt.isBiggerOrEqualValue(start) &
-                  t.recordedAt.isSmallerThanValue(end),
-            ))
-            .getSingleOrNull();
-    final steps = stepsRow?.value.round() ?? 0;
+    // Multi-device by default: a second device (or an import) can write its
+    // own steps row for the same day, so this sums across every row for the
+    // day rather than assuming exactly one exists (which throws on 2+ rows
+    // with getSingleOrNull()). Cross-device double-counting policy (e.g.
+    // phone + watch on the same walk) is a separate, deferred decision.
+    final stepsSum = _db.healthSamples.value.sum();
+    final stepsQuery = _db.selectOnly(_db.healthSamples)
+      ..addColumns([stepsSum])
+      ..where(
+        _db.healthSamples.metricType.equalsValue(HealthMetricType.steps) &
+            _db.healthSamples.recordedAt.isBiggerOrEqualValue(start) &
+            _db.healthSamples.recordedAt.isSmallerThanValue(end),
+      );
+    final stepsRow = await stepsQuery.getSingle();
+    final steps = (stepsRow.read(stepsSum) ?? 0).round();
 
     final segments =
         await (_db.select(_db.activitySamples)..where(
@@ -67,15 +80,22 @@ class FitnessStatsRepository {
     var distanceMeters = 0.0;
     var activeSeconds = 0;
     for (final segment in segments) {
+      final fullEnd = segment.endedAt ?? now;
       final segmentStart = segment.startedAt.isBefore(start)
           ? start
           : segment.startedAt;
-      final segmentEnd = (segment.endedAt ?? now).isAfter(end)
-          ? end
-          : (segment.endedAt ?? now);
+      final segmentEnd = fullEnd.isAfter(end) ? end : fullEnd;
       if (segmentEnd.isBefore(segmentStart)) continue;
 
-      distanceMeters += segment.distanceMeters ?? 0;
+      // A segment spanning midnight is clipped to this day's window, but
+      // its distance covers its *full* span — prorate by the clipped
+      // fraction of the segment's duration instead of double-counting the
+      // full distance on both days.
+      final fullMicros = fullEnd.difference(segment.startedAt).inMicroseconds;
+      final clippedMicros = segmentEnd.difference(segmentStart).inMicroseconds;
+      final fraction = fullMicros > 0 ? clippedMicros / fullMicros : 1.0;
+      distanceMeters += (segment.distanceMeters ?? 0) * fraction;
+
       if (_movingActivityTypes.contains(segment.activityType)) {
         activeSeconds += segmentEnd.difference(segmentStart).inSeconds;
       }
@@ -94,17 +114,37 @@ class FitnessStatsRepository {
     var floors = 0;
     double? previousAltitude;
     var climbSinceLastFloor = 0.0;
+    var consecutiveClimbPoints = 0;
     for (final point in locationPoints) {
       final altitude = point.altitude;
-      if (altitude == null) continue;
+      final verticalAccuracy = point.verticalAccuracy;
+      // geolocator reports 0.0 for an accuracy that isn't available on this
+      // device, not a genuinely perfect fix — don't let that bypass the gate.
+      final hasReliableAltitude =
+          altitude != null &&
+          verticalAccuracy != null &&
+          verticalAccuracy > 0 &&
+          verticalAccuracy <= _maxVerticalAccuracyMeters;
+      if (!hasReliableAltitude) {
+        previousAltitude = null;
+        climbSinceLastFloor = 0;
+        consecutiveClimbPoints = 0;
+        continue;
+      }
       if (previousAltitude != null) {
         final delta = altitude - previousAltitude;
         if (delta > 0) {
           climbSinceLastFloor += delta;
-          while (climbSinceLastFloor >= 3.0) {
-            floors++;
-            climbSinceLastFloor -= 3.0;
+          consecutiveClimbPoints++;
+          if (consecutiveClimbPoints >= _minSustainedClimbPoints) {
+            while (climbSinceLastFloor >= _floorHeightMeters) {
+              floors++;
+              climbSinceLastFloor -= _floorHeightMeters;
+            }
           }
+        } else {
+          climbSinceLastFloor = 0;
+          consecutiveClimbPoints = 0;
         }
       }
       previousAltitude = altitude;
