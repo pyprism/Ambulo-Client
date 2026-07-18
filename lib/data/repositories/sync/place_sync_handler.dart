@@ -38,15 +38,14 @@ class PlaceSyncHandler implements SyncTypeHandler {
 
   @override
   Future<List<Map<String, dynamic>>> pendingWireRecords() async {
-    final all = await _db.select(_db.places).get();
-    return all
-        .where(
-          (r) =>
-              r.syncState == SyncState.pendingUpload ||
-              r.syncState == SyncState.failed,
-        )
-        .map(_toWire)
-        .toList();
+    final rows =
+        await (_db.select(_db.places)..where(
+              (t) =>
+                  t.syncState.equalsValue(SyncState.pendingUpload) |
+                  t.syncState.equalsValue(SyncState.failed),
+            ))
+            .get();
+    return rows.map(_toWire).toList();
   }
 
   @override
@@ -84,12 +83,37 @@ class PlaceSyncHandler implements SyncTypeHandler {
     Map<String, dynamic> json, {
     required bool forceOverwriteConflicts,
   }) async {
-    if (!forceOverwriteConflicts) {
-      final existing = await (_db.select(
-        _db.places,
-      )..where((t) => t.id.equals(json['id'] as String))).getSingleOrNull();
-      if (existing?.syncState == SyncState.conflict) return;
+    final existing = await (_db.select(
+      _db.places,
+    )..where((t) => t.id.equals(json['id'] as String))).getSingleOrNull();
+    if (!forceOverwriteConflicts && existing?.syncState == SyncState.conflict) {
+      return;
     }
+
+    // currentlyInside/lastEnteredAt/lastExitedAt are recomputed locally on
+    // every location update by GeofenceService.checkTransitions — the server
+    // keeps its own copy of the same fields (for devices that never track),
+    // but on a device that's actively tracking, letting a download overwrite
+    // them can briefly regress the local in/out state and re-trigger a
+    // transition. Keep whatever is already on-device once a row exists;
+    // only seed from the server payload the first time this place is seen.
+    final currentlyInside = Value(
+      existing?.currentlyInside ?? (json['currently_inside'] as bool? ?? false),
+    );
+    final lastEnteredAt = Value(
+      existing != null
+          ? existing.lastEnteredAt
+          : (json['last_entered_at'] == null
+                ? null
+                : DateTime.parse(json['last_entered_at'] as String)),
+    );
+    final lastExitedAt = Value(
+      existing != null
+          ? existing.lastExitedAt
+          : (json['last_exited_at'] == null
+                ? null
+                : DateTime.parse(json['last_exited_at'] as String)),
+    );
 
     await _db
         .into(_db.places)
@@ -115,34 +139,34 @@ class PlaceSyncHandler implements SyncTypeHandler {
             longitude: Value((json['longitude'] as num).toDouble()),
             radiusMeters: Value((json['radius_meters'] as num).toDouble()),
             address: Value(json['address'] as String? ?? ''),
-            currentlyInside: Value(json['currently_inside'] as bool? ?? false),
-            lastEnteredAt: Value(
-              json['last_entered_at'] == null
-                  ? null
-                  : DateTime.parse(json['last_entered_at'] as String),
-            ),
-            lastExitedAt: Value(
-              json['last_exited_at'] == null
-                  ? null
-                  : DateTime.parse(json['last_exited_at'] as String),
-            ),
+            currentlyInside: currentlyInside,
+            lastEnteredAt: lastEnteredAt,
+            lastExitedAt: lastExitedAt,
           ),
         );
   }
 
   @override
   Future<SyncTypeCounts> counts() async {
-    final rows = await _db.select(_db.places).get();
+    final t = _db.places;
+    final pendingCount = countAll(
+      filter:
+          t.syncState.equalsValue(SyncState.pendingUpload) |
+          t.syncState.equalsValue(SyncState.localOnly),
+    );
+    final failedCount = countAll(
+      filter: t.syncState.equalsValue(SyncState.failed),
+    );
+    final conflictCount = countAll(
+      filter: t.syncState.equalsValue(SyncState.conflict),
+    );
+    final row = await (_db.selectOnly(
+      t,
+    )..addColumns([pendingCount, failedCount, conflictCount])).getSingle();
     return SyncTypeCounts(
-      pending: rows
-          .where(
-            (r) =>
-                r.syncState == SyncState.pendingUpload ||
-                r.syncState == SyncState.localOnly,
-          )
-          .length,
-      failed: rows.where((r) => r.syncState == SyncState.failed).length,
-      conflicts: rows.where((r) => r.syncState == SyncState.conflict).length,
+      pending: row.read(pendingCount) ?? 0,
+      failed: row.read(failedCount) ?? 0,
+      conflicts: row.read(conflictCount) ?? 0,
     );
   }
 
