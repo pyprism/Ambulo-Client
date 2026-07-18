@@ -27,7 +27,9 @@ class _MockGeolocator extends GeolocatorPlatform
       LocationPermission.always;
 
   @override
-  Stream<Position> getPositionStream({LocationSettings? locationSettings}) async* {
+  Stream<Position> getPositionStream({
+    LocationSettings? locationSettings,
+  }) async* {
     for (final p in points) {
       await Future<void>.delayed(const Duration(milliseconds: 50));
       yield p;
@@ -70,24 +72,26 @@ void main() {
     await db.close();
   });
 
-  test('a single Move session records one segment with accrued distance',
-      () async {
-    GeolocatorPlatform.instance = _MockGeolocator(walk());
-    final service = LocationTrackingService(db);
+  test(
+    'a single Move session records one segment with accrued distance',
+    () async {
+      GeolocatorPlatform.instance = _MockGeolocator(walk());
+      final service = LocationTrackingService(db);
 
-    await service.applyMode(MonitoringMode.move);
-    await drain();
+      await service.applyMode(MonitoringMode.move);
+      await drain();
 
-    final points = await db.select(db.locationPoints).get();
-    final segments = await db.select(db.activitySamples).get();
+      final points = await db.select(db.locationPoints).get();
+      final segments = await db.select(db.activitySamples).get();
 
-    expect(points.length, 6);
-    expect(segments.length, 1);
-    expect(segments.single.distanceMeters, greaterThan(0));
-    expect(segments.single.endedAt, isNotNull);
+      expect(points.length, 6);
+      expect(segments.length, 1);
+      expect(segments.single.distanceMeters, greaterThan(0));
+      expect(segments.single.endedAt, isNotNull);
 
-    await service.dispose();
-  });
+      await service.dispose();
+    },
+  );
 
   test(
     'concurrent applyMode at startup does not leak a second parallel stream',
