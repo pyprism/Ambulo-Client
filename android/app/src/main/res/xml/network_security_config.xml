@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- BYO-server users can point the app at a plain-HTTP address on their own
+     LAN (e.g. http://192.168.x.x) — Android 9+ blocks cleartext traffic by
+     default, which would otherwise fail with an unhelpful generic error.
+     The server address is always user-entered, never a fixed vendor
+     endpoint, so this is a deliberate, scoped opt-in rather than a general
+     weakening; the app also warns in-app when a server address is HTTP. -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>
