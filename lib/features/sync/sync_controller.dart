@@ -5,6 +5,7 @@ import '../../core/network/dio_client.dart';
 import '../../data/local/database_provider.dart';
 import '../../data/repositories/sync_repository.dart';
 import '../auth/auth_controller.dart';
+import '../fitness/fitness_providers.dart';
 import '../friends/friends_providers.dart';
 
 final syncRepositoryProvider = Provider<SyncRepository>((ref) {
@@ -33,6 +34,12 @@ class SyncController extends AsyncNotifier<SyncCounts> {
       ref.invalidate(friendshipsProvider);
       ref.invalidate(friendLocationsProvider);
       ref.invalidate(notificationsProvider);
+      // Fitness stats are point-in-time queries, not reactive to the tables
+      // they read — without this, newly-downloaded steps/activity stay
+      // invisible on the dashboard until the app restarts.
+      ref.invalidate(todayStatsProvider);
+      ref.invalidate(weeklyStatsProvider);
+      ref.invalidate(monthlyStatsProvider);
       return null;
     } catch (e) {
       state = AsyncData(await repo.counts());
