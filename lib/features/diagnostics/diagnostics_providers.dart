@@ -6,6 +6,8 @@ import 'package:geolocator/geolocator.dart' hide ActivityType;
 
 import '../../core/network/dio_client.dart';
 import '../../data/local/tables/location_points_table.dart';
+import '../../platform/fitness/step_tracking_provider.dart';
+import '../../platform/fitness/step_tracking_service.dart';
 import '../../platform/location/location_tracking_provider.dart';
 import '../../platform/platform_support.dart';
 import '../sync/sync_controller.dart';
@@ -19,6 +21,7 @@ class DiagnosticsSnapshot {
     required this.trackingActive,
     required this.locationServiceEnabled,
     required this.locationPermission,
+    required this.stepTrackingStatus,
     required this.batterySaveMode,
     required this.connectivity,
     required this.pending,
@@ -32,6 +35,7 @@ class DiagnosticsSnapshot {
   final bool trackingActive;
   final bool locationServiceEnabled;
   final LocationPermission locationPermission;
+  final StepTrackingStatus stepTrackingStatus;
   final bool batterySaveMode;
   final List<conn_plus.ConnectivityResult> connectivity;
   final int pending;
@@ -44,6 +48,7 @@ final diagnosticsSnapshotProvider =
     FutureProvider.autoDispose<DiagnosticsSnapshot>((ref) async {
       final mode = ref.watch(monitoringModeProvider);
       final paused = ref.watch(trackingPausedProvider);
+      final stepTrackingStatus = ref.watch(stepTrackingStatusProvider);
       final syncCounts = await ref.watch(syncControllerProvider.future);
 
       var serviceEnabled = false;
@@ -68,6 +73,7 @@ final diagnosticsSnapshotProvider =
         trackingActive: trackingActive,
         locationServiceEnabled: serviceEnabled,
         locationPermission: permission,
+        stepTrackingStatus: stepTrackingStatus,
         batterySaveMode: batterySaveMode,
         connectivity: connectivity,
         pending: syncCounts.pending,
