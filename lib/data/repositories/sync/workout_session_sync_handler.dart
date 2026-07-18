@@ -36,15 +36,14 @@ class WorkoutSessionSyncHandler implements SyncTypeHandler {
 
   @override
   Future<List<Map<String, dynamic>>> pendingWireRecords() async {
-    final all = await _db.select(_db.workoutSessions).get();
-    return all
-        .where(
-          (r) =>
-              r.syncState == SyncState.pendingUpload ||
-              r.syncState == SyncState.failed,
-        )
-        .map(_toWire)
-        .toList();
+    final rows =
+        await (_db.select(_db.workoutSessions)..where(
+              (t) =>
+                  t.syncState.equalsValue(SyncState.pendingUpload) |
+                  t.syncState.equalsValue(SyncState.failed),
+            ))
+            .get();
+    return rows.map(_toWire).toList();
   }
 
   @override
@@ -131,17 +130,25 @@ class WorkoutSessionSyncHandler implements SyncTypeHandler {
 
   @override
   Future<SyncTypeCounts> counts() async {
-    final rows = await _db.select(_db.workoutSessions).get();
+    final t = _db.workoutSessions;
+    final pendingCount = countAll(
+      filter:
+          t.syncState.equalsValue(SyncState.pendingUpload) |
+          t.syncState.equalsValue(SyncState.localOnly),
+    );
+    final failedCount = countAll(
+      filter: t.syncState.equalsValue(SyncState.failed),
+    );
+    final conflictCount = countAll(
+      filter: t.syncState.equalsValue(SyncState.conflict),
+    );
+    final row = await (_db.selectOnly(
+      t,
+    )..addColumns([pendingCount, failedCount, conflictCount])).getSingle();
     return SyncTypeCounts(
-      pending: rows
-          .where(
-            (r) =>
-                r.syncState == SyncState.pendingUpload ||
-                r.syncState == SyncState.localOnly,
-          )
-          .length,
-      failed: rows.where((r) => r.syncState == SyncState.failed).length,
-      conflicts: rows.where((r) => r.syncState == SyncState.conflict).length,
+      pending: row.read(pendingCount) ?? 0,
+      failed: row.read(failedCount) ?? 0,
+      conflicts: row.read(conflictCount) ?? 0,
     );
   }
 
