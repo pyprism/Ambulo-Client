@@ -29,6 +29,14 @@ const _pages = [
     'Use Ambulo fully offline, or add your own server later from Settings '
         'to sync across devices.',
   ),
+  _Page(
+    Icons.directions_walk_outlined,
+    'Steps and location need permission',
+    'Steps count continuously in the background, like other fitness apps — '
+        'low battery cost, so it\'s always on. Location only tracks in '
+        'Significant or Move mode. You\'ll be asked to grant motion and '
+        'location permission the first time each is needed.',
+  ),
 ];
 
 class OnboardingScreen extends ConsumerStatefulWidget {
