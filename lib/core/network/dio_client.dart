@@ -4,6 +4,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/local/secure_token_storage.dart';
+import '../../data/repositories/device_repository.dart';
 import '../../features/auth/auth_controller.dart';
 import '../server/server_config_controller.dart';
 
@@ -21,17 +22,28 @@ final dioProvider = Provider<Dio>((ref) {
     ),
   );
   dio.interceptors.add(
-    _AuthInterceptor(ref, baseUrl, ref.watch(tokenStorageProvider)),
+    _AuthInterceptor(
+      ref,
+      baseUrl,
+      ref.watch(tokenStorageProvider),
+      ref.watch(deviceRepositoryProvider),
+    ),
   );
   return dio;
 });
 
 class _AuthInterceptor extends Interceptor {
-  _AuthInterceptor(this._ref, this._baseUrl, this._tokenStorage);
+  _AuthInterceptor(
+    this._ref,
+    this._baseUrl,
+    this._tokenStorage,
+    this._deviceRepository,
+  );
 
   final Ref _ref;
   final String _baseUrl;
   final TokenStorage _tokenStorage;
+  final DeviceRepository _deviceRepository;
   Future<bool>? _refreshInFlight;
 
   @override
@@ -43,6 +55,11 @@ class _AuthInterceptor extends Interceptor {
     if (token != null) {
       options.headers['Authorization'] = 'Bearer $token';
     }
+    // Multi-device by default (locked decision): every syncable record
+    // needs a device id, and `utils/etc.py:resolve_device` on the server
+    // reads it from this header, not the request body.
+    final device = await _deviceRepository.ensureLocalDevice();
+    options.headers['X-Device-ID'] = device.id;
     handler.next(options);
   }
 
