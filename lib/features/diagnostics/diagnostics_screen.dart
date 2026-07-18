@@ -6,6 +6,7 @@ import 'package:intl/intl.dart';
 
 import '../../core/network/dio_client.dart';
 import '../../data/local/tables/location_points_table.dart';
+import '../../platform/fitness/step_tracking_service.dart';
 import '../../platform/platform_support.dart';
 import '../../shared/widgets/empty_state.dart';
 import 'diagnostics_providers.dart';
@@ -79,6 +80,15 @@ class _DiagnosticsScreenState extends ConsumerState<DiagnosticsScreen> {
                               LocationPermission.denied ||
                           data.locationPermission ==
                               LocationPermission.deniedForever,
+                    ),
+                    const Divider(height: 1),
+                    _DiagnosticTile(
+                      icon: Icons.directions_walk_outlined,
+                      label: 'Step-counting permission',
+                      value: _stepStatusLabel(data.stepTrackingStatus),
+                      isProblem:
+                          data.stepTrackingStatus ==
+                          StepTrackingStatus.permissionDenied,
                     ),
                     const Divider(height: 1),
                     _DiagnosticTile(
@@ -221,6 +231,12 @@ class _DiagnosticsScreenState extends ConsumerState<DiagnosticsScreen> {
   }
 
   String _modeLabel(MonitoringMode mode) => mode.name;
+
+  String _stepStatusLabel(StepTrackingStatus status) => switch (status) {
+    StepTrackingStatus.active => 'Granted',
+    StepTrackingStatus.permissionDenied => 'Denied',
+    StepTrackingStatus.inactive => 'Not requested (mode off)',
+  };
 
   String _permissionLabel(LocationPermission permission) =>
       switch (permission) {
