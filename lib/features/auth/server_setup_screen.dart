@@ -95,6 +95,17 @@ class _ServerSetupScreenState extends ConsumerState<ServerSetupScreen> {
                 keyboardType: TextInputType.url,
                 onChanged: (_) => setState(() => _testState = _TestState.idle),
               ),
+              if (_controller.text.trim().startsWith('http://')) ...[
+                const SizedBox(height: 8),
+                _StatusLine(
+                  icon: Icons.lock_open_outlined,
+                  color: Theme.of(context).colorScheme.error,
+                  text:
+                      'Plain HTTP is not encrypted — anyone on the network '
+                      'can read your data in transit. Use HTTPS unless '
+                      'you trust this network (e.g. your own LAN).',
+                ),
+              ],
               const SizedBox(height: 8),
               if (_testState == _TestState.ok)
                 _StatusLine(
