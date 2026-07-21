@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../data/local/database_provider.dart';
 import '../../data/repositories/device_repository.dart';
 import '../../features/fitness/fitness_providers.dart';
+import '../../features/timeline/trip_history_provider.dart';
 import '../../features/tracking/tracking_pause_controller.dart';
 import 'step_tracking_service.dart';
 
@@ -34,6 +35,7 @@ final stepTrackingServiceProvider = Provider<StepTrackingService>((ref) {
       ref.invalidate(todayStatsProvider);
       ref.invalidate(weeklyStatsProvider);
       ref.invalidate(monthlyStatsProvider);
+      ref.invalidate(todayTripTimeMinutesProvider);
     },
   );
 
