@@ -6,6 +6,7 @@ import '../../data/local/database_provider.dart';
 import '../../data/repositories/sync_repository.dart';
 import '../auth/auth_controller.dart';
 import '../fitness/fitness_providers.dart';
+import '../fitness/user_profile_controller.dart';
 import '../friends/friends_providers.dart';
 import '../timeline/trip_history_provider.dart';
 
@@ -45,6 +46,7 @@ class SyncController extends AsyncNotifier<SyncCounts> {
       ref.invalidate(weeklyStatsProvider);
       ref.invalidate(monthlyStatsProvider);
       ref.invalidate(todayTripTimeMinutesProvider);
+      await ref.read(userProfileProvider.notifier).retryPendingUpload();
       return null;
     } catch (e) {
       state = AsyncData(await repo.counts());
