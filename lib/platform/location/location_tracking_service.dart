@@ -61,6 +61,7 @@ class LocationTrackingService {
   // mutation through this future serializes them, so a later apply fully
   // awaits the previous one's teardown before starting.
   Future<void> _mutations = Future<void>.value();
+  Future<void> _positionMutations = Future<void>.value();
 
   // A classification change must persist across this much wall-clock time
   // before a new activity segment actually starts — otherwise a single
@@ -72,6 +73,7 @@ class LocationTrackingService {
   // giant multi-day "trip".
   static const _stationaryRadiusMeters = 50.0;
   static const _tripStationaryGap = Duration(minutes: 20);
+  static const _tripStartMovementMeters = 10.0;
 
   // In-memory "current activity segment" / "current trip" state — only
   // tracked while a continuous stream is running (Significant/Move), not for
@@ -112,6 +114,7 @@ class LocationTrackingService {
   Future<LocationTrackingStatus> _applyMode(MonitoringMode mode) async {
     await _subscription?.cancel();
     _subscription = null;
+    await _positionMutations;
     await _closeCurrentSegment();
     await _closeCurrentTrip();
     _lastPosition = null;
@@ -136,42 +139,41 @@ class LocationTrackingService {
         Geolocator.getPositionStream(
           locationSettings: _settingsFor(mode),
         ).listen(
-          (position) async {
-            try {
-              await _store(position, mode, RecordSource.location);
-              final previous = _lastPosition;
-              final delta = previous == null
-                  ? 0.0
-                  : haversineMeters(
-                      previous.latitude,
-                      previous.longitude,
-                      position.latitude,
-                      position.longitude,
-                    );
-              // Advance immediately after computing delta (which already
-              // captured `previous`): the callback is unawaited by the
-              // stream, so if anything below throws, `_lastPosition` must
-              // still move forward or every later delta stays 0.
-              _lastPosition = position;
-              await _updateActivitySegment(position, delta);
-              await _checkStationaryGap(position);
-              await _updateTrip(position, delta);
-              await _geofences.checkTransitions(
-                latitude: position.latitude,
-                longitude: position.longitude,
-                recordedAt: position.timestamp,
-              );
-            } catch (e, st) {
-              // A throw here becomes an uncaught zone error (the stream's
-              // onError only sees *stream* errors, not callback throws), so
-              // it would otherwise vanish silently. Surface it instead.
-              debugPrint('location callback failed: $e\n$st');
-            }
-          },
+          (position) => _enqueuePosition(position, mode),
           onError: (e, st) => debugPrint('location stream error: $e\n$st'),
           cancelOnError: false,
         );
     return LocationTrackingStatus.active;
+  }
+
+  /// Stream listeners don't await async callbacks. Queue the whole pipeline
+  /// so every point observes one consistent in-memory segment/trip state.
+  void _enqueuePosition(Position position, MonitoringMode mode) {
+    _positionMutations = _positionMutations.then((_) async {
+      try {
+        await _store(position, mode, RecordSource.location);
+        final previous = _lastPosition;
+        final delta = previous == null
+            ? 0.0
+            : haversineMeters(
+                previous.latitude,
+                previous.longitude,
+                position.latitude,
+                position.longitude,
+              );
+        _lastPosition = position;
+        await _updateActivitySegment(position, delta);
+        final closedForStationary = await _checkStationaryGap(position);
+        if (!closedForStationary) await _updateTrip(position, delta);
+        await _geofences.checkTransitions(
+          latitude: position.latitude,
+          longitude: position.longitude,
+          recordedAt: position.timestamp,
+        );
+      } catch (e, st) {
+        debugPrint('location callback failed: $e\n$st');
+      }
+    });
   }
 
   /// Manual mode's "record now" action — also usable from any other mode as
@@ -384,12 +386,12 @@ class LocationTrackingService {
   /// [_stationaryRadiusMeters] for [_tripStationaryGap] — splitting what
   /// would otherwise be one unbounded trip for as long as tracking stays
   /// on. The next point starts a fresh trip via [_updateTrip].
-  Future<void> _checkStationaryGap(Position position) async {
+  Future<bool> _checkStationaryGap(Position position) async {
     final anchor = _stationaryAnchor;
     if (anchor == null) {
       _stationaryAnchor = position;
       _lastMovementAt = position.timestamp;
-      return;
+      return false;
     }
 
     final distanceFromAnchor = haversineMeters(
@@ -401,7 +403,7 @@ class LocationTrackingService {
     if (distanceFromAnchor > _stationaryRadiusMeters) {
       _stationaryAnchor = position;
       _lastMovementAt = position.timestamp;
-      return;
+      return false;
     }
 
     final lastMovement = _lastMovementAt;
@@ -411,8 +413,10 @@ class LocationTrackingService {
         await _closeCurrentTrip();
         _stationaryAnchor = position;
         _lastMovementAt = position.timestamp;
+        return true;
       }
     }
+    return false;
   }
 
   /// Starts a trip on the first point of a continuous tracking session,
@@ -420,6 +424,7 @@ class LocationTrackingService {
   /// when tracking stops (see [applyMode] / [dispose]).
   Future<void> _updateTrip(Position position, double delta) async {
     if (_currentTripId == null) {
+      if (delta < _tripStartMovementMeters) return;
       final startPlace = await _findContainingPlace(
         position.latitude,
         position.longitude,
@@ -541,6 +546,7 @@ class LocationTrackingService {
   Future<void> _dispose() async {
     await _subscription?.cancel();
     _subscription = null;
+    await _positionMutations;
     await _closeCurrentSegment();
     await _closeCurrentTrip();
     _pendingSegmentType = null;
