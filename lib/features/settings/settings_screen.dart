@@ -346,6 +346,13 @@ Future<void> _confirmWipeLocalData(BuildContext context, WidgetRef ref) async {
   // cursor — everything already synced away before the wipe would never
   // come back even though it still exists server-side.
   await ref.read(syncRepositoryProvider).resetAllCursorsForRewipe();
+  ref.invalidate(todayStatsProvider);
+  ref.invalidate(weeklyStatsProvider);
+  ref.invalidate(monthlyStatsProvider);
+  ref.invalidate(weeklyWeightProvider);
+  ref.invalidate(monthlyWeightProvider);
+  ref.invalidate(latestWeightKgProvider);
+  ref.invalidate(latestHeightCmProvider);
   if (context.mounted) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -388,24 +395,47 @@ class _RetentionTileState extends ConsumerState<_RetentionTile> {
               height: 16,
               child: CircularProgressIndicator(strokeWidth: 2),
             )
-          : PopupMenuButton<int?>(
+          : PopupMenuButton<_RetentionChoice>(
               icon: const Icon(Icons.edit_outlined),
-              onSelected: (value) async {
+              onSelected: (choice) async {
                 setState(() => _saving = true);
                 await ref
                     .read(authControllerProvider.notifier)
-                    .setLocationRetentionDays(value);
+                    .setLocationRetentionDays(choice.days);
                 if (mounted) setState(() => _saving = false);
               },
               itemBuilder: (context) => const [
-                PopupMenuItem(value: null, child: Text('Forever')),
-                PopupMenuItem(value: 30, child: Text('30 days')),
-                PopupMenuItem(value: 90, child: Text('90 days')),
-                PopupMenuItem(value: 365, child: Text('1 year')),
+                PopupMenuItem(
+                  value: _RetentionChoice.forever,
+                  child: Text('Forever'),
+                ),
+                PopupMenuItem(
+                  value: _RetentionChoice.days30,
+                  child: Text('30 days'),
+                ),
+                PopupMenuItem(
+                  value: _RetentionChoice.days90,
+                  child: Text('90 days'),
+                ),
+                PopupMenuItem(
+                  value: _RetentionChoice.days365,
+                  child: Text('1 year'),
+                ),
               ],
             ),
     );
   }
+}
+
+enum _RetentionChoice { forever, days30, days90, days365 }
+
+extension on _RetentionChoice {
+  int? get days => switch (this) {
+    _RetentionChoice.forever => null,
+    _RetentionChoice.days30 => 30,
+    _RetentionChoice.days90 => 90,
+    _RetentionChoice.days365 => 365,
+  };
 }
 
 class _PersonalDataSection extends ConsumerWidget {
@@ -495,14 +525,22 @@ class _PersonalDataSection extends ConsumerWidget {
           leading: const Icon(Icons.wc_outlined),
           title: const Text('Sex'),
           subtitle: Text(_sexLabel(profile.sex) ?? 'Not set'),
-          trailing: PopupMenuButton<BiologicalSex?>(
+          trailing: PopupMenuButton<_SexChoice>(
             icon: const Icon(Icons.edit_outlined),
-            onSelected: (value) =>
-                ref.read(userProfileProvider.notifier).setSex(value),
+            onSelected: (choice) =>
+                ref.read(userProfileProvider.notifier).setSex(choice.sex),
             itemBuilder: (context) => [
-              const PopupMenuItem(value: null, child: Text('Not set')),
+              const PopupMenuItem(
+                value: _SexChoice.notSet,
+                child: Text('Not set'),
+              ),
               for (final sex in BiologicalSex.values)
-                PopupMenuItem(value: sex, child: Text(_sexLabel(sex)!)),
+                PopupMenuItem(
+                  value: _SexChoice.values.firstWhere(
+                    (choice) => choice.sex == sex,
+                  ),
+                  child: Text(_sexLabel(sex)!),
+                ),
             ],
           ),
         ),
@@ -579,6 +617,17 @@ class _PersonalDataSection extends ConsumerWidget {
     ref.invalidate(weeklyStatsProvider);
     ref.invalidate(monthlyStatsProvider);
   }
+}
+
+enum _SexChoice { notSet, male, female, other }
+
+extension on _SexChoice {
+  BiologicalSex? get sex => switch (this) {
+    _SexChoice.notSet => null,
+    _SexChoice.male => BiologicalSex.male,
+    _SexChoice.female => BiologicalSex.female,
+    _SexChoice.other => BiologicalSex.other,
+  };
 }
 
 class _TrackingProblemBanner extends StatelessWidget {
