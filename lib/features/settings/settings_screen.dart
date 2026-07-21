@@ -7,6 +7,7 @@ import 'package:intl/intl.dart';
 import '../../core/server/server_config_controller.dart';
 import '../../core/theme/theme_mode_controller.dart';
 import '../../data/local/database_provider.dart';
+import '../../data/local/tables/health_samples_table.dart';
 import '../../data/local/tables/location_points_table.dart';
 import '../../platform/platform_support.dart';
 import '../../platform/fitness/step_tracking_provider.dart';
@@ -15,6 +16,8 @@ import '../../platform/location/location_tracking_provider.dart';
 import '../../platform/location/location_tracking_service.dart';
 import '../auth/auth_controller.dart';
 import '../auth/auth_user.dart';
+import '../fitness/fitness_providers.dart';
+import '../fitness/user_profile_controller.dart';
 import '../sync/sync_controller.dart';
 import '../tracking/monitoring_mode_controller.dart';
 import '../tracking/tracking_pause_controller.dart';
@@ -101,6 +104,9 @@ class SettingsScreen extends ConsumerWidget {
               onTap: () => context.push('/import-export'),
             ),
           ),
+          const SizedBox(height: 24),
+          _SectionHeader('Personal data'),
+          const Card(child: _PersonalDataSection()),
           const SizedBox(height: 24),
           _SectionHeader('Sync'),
           const Card(child: _SyncStatusTile()),
@@ -399,6 +405,179 @@ class _RetentionTileState extends ConsumerState<_RetentionTile> {
               ],
             ),
     );
+  }
+}
+
+class _PersonalDataSection extends ConsumerWidget {
+  const _PersonalDataSection();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final profile = ref.watch(userProfileProvider);
+    final weight = ref.watch(latestWeightKgProvider).value;
+    final height = ref.watch(latestHeightCmProvider).value;
+    final bmrReady = profile.isComplete && weight != null && height != null;
+
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+          child: Text(
+            bmrReady
+                ? 'Calories are estimated from your BMR plus activity, '
+                      'scaled to your weight.'
+                : 'Log a weight and height reading, and set date of birth '
+                      'and sex, to personalize calorie estimates. Until all '
+                      'four are available, a rough flat-rate estimate is '
+                      'used instead.',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: Theme.of(context).colorScheme.outline,
+            ),
+          ),
+        ),
+        ListTile(
+          leading: const Icon(Icons.monitor_weight_outlined),
+          title: const Text('Weight'),
+          subtitle: Text(
+            weight == null
+                ? 'No readings yet'
+                : 'Latest: ${weight.toStringAsFixed(1)} kg',
+          ),
+          onTap: () => context.push('/charts'),
+          trailing: IconButton(
+            icon: const Icon(Icons.add_circle_outline),
+            tooltip: 'Log weight',
+            onPressed: () => _logSample(
+              context: context,
+              ref: ref,
+              title: 'Log weight (kg)',
+              metricType: HealthMetricType.weight,
+              unit: 'kg',
+            ),
+          ),
+        ),
+        const Divider(height: 1),
+        ListTile(
+          leading: const Icon(Icons.height_outlined),
+          title: const Text('Height'),
+          subtitle: Text(
+            height == null
+                ? 'No readings yet'
+                : 'Latest: ${height.toStringAsFixed(0)} cm',
+          ),
+          trailing: IconButton(
+            icon: const Icon(Icons.add_circle_outline),
+            tooltip: 'Log height',
+            onPressed: () => _logSample(
+              context: context,
+              ref: ref,
+              title: 'Log height (cm)',
+              metricType: HealthMetricType.height,
+              unit: 'cm',
+            ),
+          ),
+        ),
+        const Divider(height: 1),
+        ListTile(
+          leading: const Icon(Icons.cake_outlined),
+          title: const Text('Date of birth'),
+          subtitle: Text(
+            profile.dateOfBirth == null
+                ? 'Not set'
+                : '${DateFormat.yMMMd().format(profile.dateOfBirth!)} '
+                      '(${profile.age} years)',
+          ),
+          trailing: const Icon(Icons.edit_outlined),
+          onTap: () => _pickDateOfBirth(context, ref, profile.dateOfBirth),
+        ),
+        const Divider(height: 1),
+        ListTile(
+          leading: const Icon(Icons.wc_outlined),
+          title: const Text('Sex'),
+          subtitle: Text(_sexLabel(profile.sex) ?? 'Not set'),
+          trailing: PopupMenuButton<BiologicalSex?>(
+            icon: const Icon(Icons.edit_outlined),
+            onSelected: (value) =>
+                ref.read(userProfileProvider.notifier).setSex(value),
+            itemBuilder: (context) => [
+              const PopupMenuItem(value: null, child: Text('Not set')),
+              for (final sex in BiologicalSex.values)
+                PopupMenuItem(value: sex, child: Text(_sexLabel(sex)!)),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  String? _sexLabel(BiologicalSex? sex) => switch (sex) {
+    null => null,
+    BiologicalSex.male => 'Male',
+    BiologicalSex.female => 'Female',
+    BiologicalSex.other => 'Other',
+  };
+
+  Future<void> _pickDateOfBirth(
+    BuildContext context,
+    WidgetRef ref,
+    DateTime? current,
+  ) async {
+    final now = DateTime.now();
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: current ?? DateTime(now.year - 30),
+      firstDate: DateTime(now.year - 120),
+      lastDate: now,
+    );
+    if (picked != null) {
+      await ref.read(userProfileProvider.notifier).setDateOfBirth(picked);
+    }
+  }
+
+  Future<void> _logSample({
+    required BuildContext context,
+    required WidgetRef ref,
+    required String title,
+    required HealthMetricType metricType,
+    required String unit,
+  }) async {
+    final controller = TextEditingController();
+    final value = await showDialog<double>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(title),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              final parsed = double.tryParse(controller.text.trim());
+              if (parsed == null || parsed <= 0) return;
+              Navigator.of(context).pop(parsed);
+            },
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+    if (value == null) return;
+    await ref
+        .read(healthSampleRepositoryProvider)
+        .addManualSample(metricType: metricType, value: value, unit: unit);
+    ref.invalidate(latestWeightKgProvider);
+    ref.invalidate(latestHeightCmProvider);
+    ref.invalidate(weeklyWeightProvider);
+    ref.invalidate(monthlyWeightProvider);
+    ref.invalidate(todayStatsProvider);
+    ref.invalidate(weeklyStatsProvider);
+    ref.invalidate(monthlyStatsProvider);
   }
 }
 
