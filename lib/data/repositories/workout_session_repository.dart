@@ -38,9 +38,9 @@ class WorkoutSessionRepository {
     String id, {
     ActivityType? activityType,
     DateTime? startedAt,
-    DateTime? endedAt,
-    double? distanceMeters,
-    double? calories,
+    Value<DateTime?>? endedAt,
+    Value<double?>? distanceMeters,
+    Value<double?>? calories,
     String? notes,
   }) async {
     final current = await (_db.select(
@@ -55,11 +55,9 @@ class WorkoutSessionRepository {
             ? const Value.absent()
             : Value(activityType),
         startedAt: startedAt == null ? const Value.absent() : Value(startedAt),
-        endedAt: endedAt == null ? const Value.absent() : Value(endedAt),
-        distanceMeters: distanceMeters == null
-            ? const Value.absent()
-            : Value(distanceMeters),
-        calories: calories == null ? const Value.absent() : Value(calories),
+        endedAt: endedAt ?? const Value.absent(),
+        distanceMeters: distanceMeters ?? const Value.absent(),
+        calories: calories ?? const Value.absent(),
         notes: notes == null ? const Value.absent() : Value(notes),
         updatedAt: bump.updatedAt,
         localRev: bump.localRev,
