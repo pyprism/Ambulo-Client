@@ -101,6 +101,7 @@ class _ActivityTile extends StatelessWidget {
       subtitle: Text(
         DateFormat.yMMMd().add_jm().format(segment.startedAt.toLocal()),
       ),
+      onTap: () => context.push('/activities/${segment.id}'),
       trailing: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         crossAxisAlignment: CrossAxisAlignment.end,
