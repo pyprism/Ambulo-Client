@@ -55,9 +55,14 @@ class ExportRepository {
   Future<String> _buildJson(List<LocationPoint> points) async {
     final places = await _db.select(_db.places).get();
     final trips = await _db.select(_db.trips).get();
+    final healthSamples = await _db.select(_db.healthSamples).get();
+    final activitySamples = await _db.select(_db.activitySamples).get();
+    final goals = await _db.select(_db.goals).get();
+    final workouts = await _db.select(_db.workoutSessions).get();
+    final notes = await _db.select(_db.notes).get();
 
     final data = {
-      'ambulo_export_version': 1,
+      'ambulo_export_version': 2,
       'exported_at': DateTime.now().toUtc().toIso8601String(),
       'location_points': [
         for (final p in points)
@@ -93,6 +98,68 @@ class ExportRepository {
             'ended_at': trip.endedAt?.toUtc().toIso8601String(),
             'distance_meters': trip.distanceMeters,
             'point_count': trip.pointCount,
+            'start_place_id': trip.startPlaceId,
+            'end_place_id': trip.endPlaceId,
+          },
+      ],
+      'health_samples': [
+        for (final sample in healthSamples.where((s) => s.deletedAt == null))
+          {
+            'id': sample.id,
+            'metric_type': sample.metricType.name,
+            'value': sample.value,
+            'unit': sample.unit,
+            'recorded_at': sample.recordedAt.toUtc().toIso8601String(),
+            'note': sample.note,
+          },
+      ],
+      'activity_samples': [
+        for (final sample in activitySamples.where((s) => s.deletedAt == null))
+          {
+            'id': sample.id,
+            'activity_type': sample.activityType.name,
+            'started_at': sample.startedAt.toUtc().toIso8601String(),
+            'ended_at': sample.endedAt?.toUtc().toIso8601String(),
+            'confidence': sample.confidence,
+            'distance_meters': sample.distanceMeters,
+            'steps': sample.steps,
+          },
+      ],
+      'goals': [
+        for (final goal in goals.where((g) => g.deletedAt == null))
+          {
+            'id': goal.id,
+            'metric_type': goal.metricType.name,
+            'target_value': goal.targetValue,
+            'period': goal.period.name,
+            'start_date':
+                '${goal.startDate.year.toString().padLeft(4, '0')}-${goal.startDate.month.toString().padLeft(2, '0')}-${goal.startDate.day.toString().padLeft(2, '0')}',
+            'end_date': goal.endDate == null
+                ? null
+                : '${goal.endDate!.year.toString().padLeft(4, '0')}-${goal.endDate!.month.toString().padLeft(2, '0')}-${goal.endDate!.day.toString().padLeft(2, '0')}',
+            'is_active': goal.isActive,
+          },
+      ],
+      'workout_sessions': [
+        for (final workout in workouts.where((w) => w.deletedAt == null))
+          {
+            'id': workout.id,
+            'activity_type': workout.activityType.name,
+            'started_at': workout.startedAt.toUtc().toIso8601String(),
+            'ended_at': workout.endedAt?.toUtc().toIso8601String(),
+            'distance_meters': workout.distanceMeters,
+            'calories': workout.calories,
+            'notes': workout.notes,
+          },
+      ],
+      'notes': [
+        for (final note in notes.where((n) => n.deletedAt == null))
+          {
+            'id': note.id,
+            'content': note.content,
+            'note_date':
+                '${note.noteDate.year.toString().padLeft(4, '0')}-${note.noteDate.month.toString().padLeft(2, '0')}-${note.noteDate.day.toString().padLeft(2, '0')}',
+            'context': note.context,
           },
       ],
     };
