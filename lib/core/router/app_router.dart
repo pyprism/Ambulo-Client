@@ -10,6 +10,7 @@ import '../../features/auth/server_setup_screen.dart';
 import '../../features/charts/charts_screen.dart';
 import '../../features/dashboard/dashboard_screen.dart';
 import '../../features/diagnostics/diagnostics_screen.dart';
+import '../../features/fitness/activity_detail_screen.dart';
 import '../../features/fitness/fitness_screen.dart';
 import '../../features/friends/friends_screen.dart';
 import '../../features/friends/notifications_screen.dart';
@@ -21,6 +22,7 @@ import '../../features/places/places_screen.dart';
 import '../../features/settings/settings_screen.dart';
 import '../../features/sync/conflicts_screen.dart';
 import '../../features/timeline/timeline_screen.dart';
+import '../../features/timeline/trip_detail_screen.dart';
 import '../../features/workouts/workouts_screen.dart';
 import '../../shared/widgets/adaptive_nav_shell.dart';
 import 'onboarding_status_controller.dart';
@@ -124,6 +126,16 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/places',
         builder: (context, state) => const PlacesScreen(),
+      ),
+      GoRoute(
+        path: '/trips/:id',
+        builder: (context, state) =>
+            TripDetailScreen(tripId: state.pathParameters['id']!),
+      ),
+      GoRoute(
+        path: '/activities/:id',
+        builder: (context, state) =>
+            ActivityDetailScreen(activityId: state.pathParameters['id']!),
       ),
       GoRoute(
         path: '/import-export',
