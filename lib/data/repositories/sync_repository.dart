@@ -1,7 +1,7 @@
 import 'package:dio/dio.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../local/database.dart';
+import '../local/sync_preferences.dart';
 import 'sync/activity_sample_sync_handler.dart';
 import 'sync/goal_sync_handler.dart';
 import 'sync/health_sample_sync_handler.dart';
@@ -49,8 +49,6 @@ class SyncRepository {
   final List<SyncTypeHandler> _handlers;
   final Dio _dio;
 
-  static const _cursorKeyPrefix = 'sync_cursor_';
-  static const _lastSyncKey = 'sync_last_sync_at';
   static const _downloadBatchGuard = 50;
 
   // Keeps each upload request bounded regardless of backlog size — an
@@ -59,26 +57,15 @@ class SyncRepository {
   // sync permanently since every retry rebuilds the same oversized request.
   static const _uploadChunkSize = 500;
 
-  Future<int> _cursor(String typeName) async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getInt('$_cursorKeyPrefix$typeName') ?? 0;
-  }
+  Future<int> _cursor(String typeName) => SyncPreferences.cursor(typeName);
 
-  Future<void> _saveCursor(String typeName, int cursor) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setInt('$_cursorKeyPrefix$typeName', cursor);
-  }
+  Future<void> _saveCursor(String typeName, int cursor) =>
+      SyncPreferences.saveCursor(typeName, cursor);
 
-  Future<DateTime?> lastSyncAt() async {
-    final prefs = await SharedPreferences.getInstance();
-    final raw = prefs.getString(_lastSyncKey);
-    return raw == null ? null : DateTime.tryParse(raw);
-  }
+  Future<DateTime?> lastSyncAt() => SyncPreferences.lastSyncAt();
 
-  Future<void> _saveLastSyncAt(DateTime at) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_lastSyncKey, at.toIso8601String());
-  }
+  Future<void> _saveLastSyncAt(DateTime at) =>
+      SyncPreferences.saveLastSyncAt(at);
 
   Future<SyncCounts> counts() async {
     var total = SyncTypeCounts.zero;
@@ -185,8 +172,11 @@ class SyncRepository {
         await _saveCursor(handler.typeName, newCursor);
         if (bucket['has_more'] == true) anyMore = true;
       }
-      if (!anyMore) break;
+      if (!anyMore) return;
     }
+    throw StateError(
+      'Sync download did not complete after $_downloadBatchGuard batches.',
+    );
   }
 
   /// Upload-then-download: uploading first means the download pass (which
@@ -216,10 +206,14 @@ class SyncRepository {
     final data = response.data as Map<String, dynamic>;
     final bucket = data[typeName] as Map<String, dynamic>;
     final accepted = (bucket['accepted'] as List).cast<String>();
-    if (accepted.contains(id)) {
-      await handler.markSynced(id);
+    if (!accepted.contains(id)) {
+      throw StateError('Server did not accept the conflict resolution.');
     }
-    await _downloadAll(only: [handler]);
+    // The conflict download may already have advanced this type's cursor past
+    // the newly accepted force-overwrite. Re-read from zero and explicitly
+    // allow this resolution path to replace the former conflict row.
+    await _saveCursor(typeName, 0);
+    await _downloadAll(forceOverwriteConflicts: true, only: [handler]);
   }
 
   /// Resolve all outstanding conflicts for one record type by discarding
@@ -239,8 +233,6 @@ class SyncRepository {
   /// synced away before the wipe would never come back even though it
   /// still exists server-side.
   Future<void> resetAllCursorsForRewipe() async {
-    for (final handler in _handlers) {
-      await _saveCursor(handler.typeName, 0);
-    }
+    await SyncPreferences.resetCursors();
   }
 }
