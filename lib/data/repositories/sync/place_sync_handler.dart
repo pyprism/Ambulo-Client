@@ -54,9 +54,7 @@ class PlaceSyncHandler implements SyncTypeHandler {
     required List<String> conflicts,
     required List<Map<String, dynamic>> rejected,
   }) async {
-    for (final id in accepted) {
-      await markSynced(id);
-    }
+    // Accepted rows become synced only when download supplies server_rev.
     for (final id in conflicts) {
       await (_db.update(_db.places)..where((t) => t.id.equals(id))).write(
         const PlacesCompanion(syncState: Value(SyncState.conflict)),
