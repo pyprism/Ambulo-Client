@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/theme/app_colors.dart';
+import '../../data/local/database.dart';
 import '../../data/local/tables/health_samples_table.dart';
 import '../../data/local/tables/location_points_table.dart';
 import '../../data/repositories/fitness_stats_repository.dart';
@@ -118,7 +119,16 @@ class DashboardScreen extends ConsumerWidget {
                 ),
               ),
               const SizedBox(height: 24),
-              _SectionHeader('Goals'),
+              Row(
+                children: [
+                  const Expanded(child: _SectionHeader('Goals')),
+                  IconButton(
+                    icon: const Icon(Icons.edit_outlined),
+                    tooltip: 'Edit daily goals',
+                    onPressed: () => _editGoals(context, ref, activeGoals),
+                  ),
+                ],
+              ),
               Card(
                 child: Padding(
                   padding: const EdgeInsets.all(16),
@@ -194,6 +204,74 @@ class DashboardScreen extends ConsumerWidget {
         },
       ),
     );
+  }
+}
+
+Future<void> _editGoals(
+  BuildContext context,
+  WidgetRef ref,
+  List<Goal> goals,
+) async {
+  const metrics = [
+    HealthMetricType.steps,
+    HealthMetricType.activeMinutes,
+    HealthMetricType.distance,
+    HealthMetricType.calories,
+  ];
+  final controllers = {
+    for (final metric in metrics)
+      metric: TextEditingController(
+        text: goalTargetFor(metric, goals).toStringAsFixed(
+          metric == HealthMetricType.steps ||
+                  metric == HealthMetricType.activeMinutes
+              ? 0
+              : 1,
+        ),
+      ),
+  };
+  final saved = await showDialog<bool>(
+    context: context,
+    builder: (dialogContext) => AlertDialog(
+      title: const Text('Daily goals'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (final metric in metrics)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: TextField(
+                controller: controllers[metric],
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                decoration: InputDecoration(labelText: metric.name),
+              ),
+            ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(dialogContext).pop(false),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.of(dialogContext).pop(true),
+          child: const Text('Save'),
+        ),
+      ],
+    ),
+  );
+  if (saved == true) {
+    final repo = ref.read(goalRepositoryProvider);
+    for (final metric in metrics) {
+      final target = double.tryParse(controllers[metric]!.text);
+      if (target != null && target.isFinite && target > 0) {
+        await repo.setDailyGoal(metric, target);
+      }
+    }
+  }
+  for (final controller in controllers.values) {
+    controller.dispose();
   }
 }
 
