@@ -1,8 +1,14 @@
+import 'dart:async';
+
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/network/dio_client.dart';
+import '../../core/server/server_config_controller.dart';
+import '../../data/local/database_provider.dart';
 import '../../data/local/secure_token_storage.dart';
+import '../../data/local/sync_preferences.dart';
 import '../../data/repositories/device_repository.dart';
 import 'auth_user.dart';
 
@@ -13,6 +19,13 @@ class AuthController extends AsyncNotifier<AuthUser?> {
 
   @override
   Future<AuthUser?> build() async {
+    ref.listen(serverConfigProvider, (previous, next) {
+      final previousOrigin = previous?.value;
+      final nextOrigin = next.value;
+      if (previousOrigin != null && previousOrigin != nextOrigin) {
+        unawaited(_resetForOriginChange());
+      }
+    });
     final token = await _tokenStorage.readAccessToken();
     if (token == null) return null;
     return _fetchMe();
@@ -23,8 +36,12 @@ class AuthController extends AsyncNotifier<AuthUser?> {
       final dio = ref.read(dioProvider);
       final response = await dio.get('/api/accounts/users/me/');
       return AuthUser.fromJson(response.data as Map<String, dynamic>);
-    } catch (_) {
-      return null;
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 401 || e.response?.statusCode == 403) {
+        await _tokenStorage.clear();
+        return null;
+      }
+      rethrow;
     }
   }
 
@@ -45,12 +62,19 @@ class AuthController extends AsyncNotifier<AuthUser?> {
         refreshToken: data['refresh'] as String,
       );
       final user = await _fetchMe();
-      state = AsyncData(user);
-      if (user != null) {
-        await ref
-            .read(deviceRepositoryProvider)
-            .registerWithServer(dio, userId: user.id);
+      if (user == null) {
+        return 'The server rejected this session. Please sign in again.';
       }
+      final device = await ref
+          .read(deviceRepositoryProvider)
+          .ensureLocalDevice();
+      if (device.userId != null && device.userId != user.id.toString()) {
+        await _clearLocalSession(clearTokens: false);
+      }
+      state = AsyncData(user);
+      await ref
+          .read(deviceRepositoryProvider)
+          .registerWithServer(dio, userId: user.id);
       return null;
     } on DioException catch (e) {
       return describeDioError(e);
@@ -88,12 +112,28 @@ class AuthController extends AsyncNotifier<AuthUser?> {
         // Best-effort: still wipe local tokens even if the server call fails.
       }
     }
-    await _tokenStorage.clear();
+    await _clearLocalSession();
     state = const AsyncData(null);
   }
 
   /// Called by the Dio auth interceptor when a refresh attempt fails.
   Future<void> handleSignedOut() async {
+    await _clearLocalSession(clearTokens: false);
+    state = const AsyncData(null);
+  }
+
+  Future<void> _clearLocalSession({bool clearTokens = true}) async {
+    await ref.read(appDatabaseProvider).wipeAllLocalData();
+    await SyncPreferences.clear();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('profile_date_of_birth');
+    await prefs.remove('profile_biological_sex');
+    await prefs.remove('profile_pending_upload');
+    if (clearTokens) await _tokenStorage.clear();
+  }
+
+  Future<void> _resetForOriginChange() async {
+    await _clearLocalSession();
     state = const AsyncData(null);
   }
 
