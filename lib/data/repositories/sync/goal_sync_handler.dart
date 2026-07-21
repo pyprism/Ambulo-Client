@@ -15,7 +15,7 @@ class GoalSyncHandler implements SyncTypeHandler {
   @override
   String get typeName => 'goal';
 
-  String _dateOnly(DateTime dt) => DateFormat('yyyy-MM-dd').format(dt.toUtc());
+  String _dateOnly(DateTime dt) => DateFormat('yyyy-MM-dd').format(dt);
 
   Map<String, dynamic> _toWire(Goal row) {
     return {
@@ -53,9 +53,7 @@ class GoalSyncHandler implements SyncTypeHandler {
     required List<String> conflicts,
     required List<Map<String, dynamic>> rejected,
   }) async {
-    for (final id in accepted) {
-      await markSynced(id);
-    }
+    // Accepted rows become synced only when download supplies server_rev.
     for (final id in conflicts) {
       await (_db.update(_db.goals)..where((t) => t.id.equals(id))).write(
         const GoalsCompanion(syncState: Value(SyncState.conflict)),
