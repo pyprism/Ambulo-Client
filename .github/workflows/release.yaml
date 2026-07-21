@@ -1,0 +1,66 @@
+name: Release
+
+# Builds binaries for every platform and attaches them to the GitHub Release
+# that triggered the run (publish a release to kick this off).
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+env:
+  FLUTTER_VERSION: '3.44.6'
+
+jobs:
+  build:
+    name: Build ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: android, os: ubuntu-latest }
+          - { target: web,     os: ubuntu-latest }
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Java (Android)
+        if: matrix.target == 'android'
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - run: flutter pub get
+
+      - name: Build & package
+        shell: bash
+        run: |
+          mkdir -p dist
+          case "${{ matrix.target }}" in
+            android)
+              flutter build apk --split-per-abi
+              cp build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk dist/ambulo-android-armeabi-v7a.apk
+              cp build/app/outputs/flutter-apk/app-arm64-v8a-release.apk dist/ambulo-android-arm64-v8a.apk
+              cp build/app/outputs/flutter-apk/app-x86_64-release.apk dist/ambulo-android-x86_64-release.apk
+              ;;
+            web)
+              flutter build web --release
+              ( cd build/web && zip -r ../../dist/ambulo-web.zip . )
+              ;;
+          esac
+
+      - name: Upload to release
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ github.event.release.tag_name }}
+          files: dist/*
