@@ -54,7 +54,7 @@ stationary.
 
 ```
 flutter analyze                              # static analysis
-flutter test                                 # everything (see below)
+flutter test                                 # everything
 flutter test test/import_export_test.dart    # one file
 ```
 
