@@ -1,7 +1,10 @@
+import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:ambulo/data/local/database.dart';
+import 'package:ambulo/data/local/tables/activity_samples_table.dart';
+import 'package:ambulo/data/local/tables/health_samples_table.dart';
 import 'package:ambulo/data/local/tables/location_points_table.dart';
 import 'package:ambulo/data/local/tables/sync_columns.dart';
 import 'package:ambulo/data/repositories/export_repository.dart';
@@ -101,6 +104,74 @@ void main() {
             source: RecordSource.manual,
           ),
         );
+    await db
+        .into(db.places)
+        .insert(
+          PlacesCompanion.insert(
+            id: const Value('home'),
+            name: 'Home',
+            latitude: 51.5,
+            longitude: -0.12,
+            source: RecordSource.manual,
+          ),
+        );
+    await db
+        .into(db.trips)
+        .insert(
+          TripsCompanion.insert(
+            id: const Value('trip-1'),
+            startedAt: DateTime.utc(2026, 1, 1, 10),
+            startPlaceId: const Value('home'),
+            source: RecordSource.manual,
+          ),
+        );
+    await db
+        .into(db.healthSamples)
+        .insert(
+          HealthSamplesCompanion.insert(
+            metricType: HealthMetricType.weight,
+            value: 70,
+            recordedAt: DateTime.utc(2026, 1, 1),
+            source: RecordSource.manual,
+          ),
+        );
+    await db
+        .into(db.activitySamples)
+        .insert(
+          ActivitySamplesCompanion.insert(
+            activityType: ActivityType.walking,
+            startedAt: DateTime.utc(2026, 1, 1, 10),
+            source: RecordSource.manual,
+          ),
+        );
+    await db
+        .into(db.goals)
+        .insert(
+          GoalsCompanion.insert(
+            metricType: HealthMetricType.steps,
+            targetValue: 9000,
+            startDate: DateTime.utc(2026, 1, 1),
+            source: RecordSource.manual,
+          ),
+        );
+    await db
+        .into(db.workoutSessions)
+        .insert(
+          WorkoutSessionsCompanion.insert(
+            activityType: ActivityType.running,
+            startedAt: DateTime.utc(2026, 1, 1, 10),
+            source: RecordSource.manual,
+          ),
+        );
+    await db
+        .into(db.notes)
+        .insert(
+          NotesCompanion.insert(
+            content: 'Backup note',
+            noteDate: DateTime.utc(2026, 1, 1),
+            source: RecordSource.manual,
+          ),
+        );
 
     final exportRepo = ExportRepository(db);
     final json = await exportRepo.build(ExportFormat.json);
@@ -111,6 +182,15 @@ void main() {
     final preview = await importRepo.parseAndPreview('backup.json', json);
     expect(preview.formatLabel, 'Ambulo JSON');
     expect(preview.newPoints, hasLength(1));
+    expect(preview.additionalRecordCount, 7);
+    await importRepo.commit(preview);
+    expect(await db.select(db.places).get(), hasLength(1));
+    expect((await db.select(db.trips).get()).single.startPlaceId, 'home');
+    expect(await db.select(db.healthSamples).get(), hasLength(1));
+    expect(await db.select(db.activitySamples).get(), hasLength(1));
+    expect(await db.select(db.goals).get(), hasLength(1));
+    expect(await db.select(db.workoutSessions).get(), hasLength(1));
+    expect(await db.select(db.notes).get(), hasLength(1));
   });
 
   test('rejects an unrecognized file format', () async {
