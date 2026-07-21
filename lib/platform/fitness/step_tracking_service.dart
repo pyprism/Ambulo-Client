@@ -45,6 +45,7 @@ class StepTrackingService {
   final Future<String> Function() _deviceId;
   final VoidCallback? _onUpdate;
   StreamSubscription<StepCount>? _subscription;
+  Future<void> _work = Future<void>.value();
   StepTrackingStatus _status = StepTrackingStatus.inactive;
 
   static const _flushEveryStepsCount = 20;
@@ -54,6 +55,18 @@ class StepTrackingService {
   String? _lastPersistedDayKey;
 
   StepTrackingStatus get status => _status;
+
+  Future<T> _serialize<T>(Future<T> Function() action) {
+    final completer = Completer<T>();
+    _work = _work.then((_) async {
+      try {
+        completer.complete(await action());
+      } catch (e, st) {
+        completer.completeError(e, st);
+      }
+    });
+    return completer.future;
+  }
 
   Future<StepTrackingStatus> start() async {
     if (!PlatformSupport.supportsSensorCollection) {
@@ -75,7 +88,7 @@ class StepTrackingService {
     }
 
     _subscription = Pedometer.stepCountStream.listen(
-      _onStepCount,
+      (event) => _serialize(() => _onStepCount(event)),
       onError: (_) => _status = StepTrackingStatus.permissionDenied,
       cancelOnError: false,
     );
@@ -83,16 +96,18 @@ class StepTrackingService {
   }
 
   Future<void> stop() async {
-    await _flushPending();
-    await _subscription?.cancel();
-    _subscription = null;
-    _status = StepTrackingStatus.inactive;
+    await _serialize(() async {
+      await _flushPending();
+      await _subscription?.cancel();
+      _subscription = null;
+      _status = StepTrackingStatus.inactive;
+    });
   }
 
   /// Persists any buffered-but-unwritten step count — call this at points
   /// where losing the buffer would be user-visible (app backgrounding) even
   /// though the flush threshold hasn't been hit yet.
-  Future<void> flush() => _flushPending();
+  Future<void> flush() => _serialize(_flushPending);
 
   Future<void> _onStepCount(StepCount event) async {
     final prefs = await SharedPreferences.getInstance();
