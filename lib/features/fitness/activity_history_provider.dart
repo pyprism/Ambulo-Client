@@ -21,9 +21,8 @@ final activityHistoryProvider = StreamProvider<List<ActivitySample>>((ref) {
 final activitySampleByIdProvider = StreamProvider.autoDispose
     .family<ActivitySample?, String>((ref, id) {
       final db = ref.watch(appDatabaseProvider);
-      return (db.select(db.activitySamples)..where(
-            (t) => t.id.equals(id) & t.deletedAt.isNull(),
-          ))
+      return (db.select(db.activitySamples)
+            ..where((t) => t.id.equals(id) & t.deletedAt.isNull()))
           .watchSingleOrNull();
     });
 
