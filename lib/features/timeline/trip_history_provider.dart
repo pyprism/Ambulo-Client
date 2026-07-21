@@ -19,8 +19,9 @@ final tripHistoryProvider = StreamProvider.autoDispose
       if (range != null) {
         query.where(
           (t) =>
-              t.startedAt.isBiggerOrEqualValue(range.start) &
-              t.startedAt.isSmallerThanValue(range.end),
+              t.startedAt.isSmallerThanValue(range.end) &
+              (t.endedAt.isBiggerOrEqualValue(range.start) |
+                  t.endedAt.isNull()),
         );
       }
       query.orderBy([(t) => OrderingTerm.desc(t.startedAt)]);
