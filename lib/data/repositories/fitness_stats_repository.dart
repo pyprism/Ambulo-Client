@@ -148,6 +148,32 @@ class FitnessStatsRepository {
         activeSeconds += segmentEnd.difference(segmentStart).inSeconds;
       }
     }
+
+    final workouts =
+        await (_db.select(_db.workoutSessions)..where(
+              (t) =>
+                  t.startedAt.isSmallerThanValue(end) &
+                  (t.endedAt.isBiggerOrEqualValue(start) | t.endedAt.isNull()) &
+                  t.deletedAt.isNull(),
+            ))
+            .get();
+    var workoutCalories = 0.0;
+    for (final workout in workouts) {
+      final fullEnd = workout.endedAt ?? now;
+      final clippedStart = workout.startedAt.isBefore(start)
+          ? start
+          : workout.startedAt;
+      final clippedEnd = fullEnd.isAfter(end) ? end : fullEnd;
+      if (!clippedEnd.isAfter(clippedStart)) continue;
+      final fullMicros = fullEnd.difference(workout.startedAt).inMicroseconds;
+      final clippedMicros = clippedEnd.difference(clippedStart).inMicroseconds;
+      final fraction = fullMicros > 0 ? clippedMicros / fullMicros : 1.0;
+      distanceMeters += (workout.distanceMeters ?? 0) * fraction;
+      if (_movingActivityTypes.contains(workout.activityType)) {
+        activeSeconds += clippedEnd.difference(clippedStart).inSeconds;
+      }
+      workoutCalories += (workout.calories ?? 0) * fraction;
+    }
     final activeMinutes = (activeSeconds / 60).round();
 
     final locationPoints =
@@ -217,9 +243,9 @@ class FitnessStatsRepository {
           .clamp(0.0, 1.0);
       final activeCalories =
           steps * 0.04 * weightScale + activeMinutes * 5.0 * weightScale;
-      calories = bmr * dayFraction + activeCalories;
+      calories = bmr * dayFraction + activeCalories + workoutCalories;
     } else {
-      calories = steps * 0.04 + activeMinutes * 5.0;
+      calories = steps * 0.04 + activeMinutes * 5.0 + workoutCalories;
     }
 
     return DailyStats(
