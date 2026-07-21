@@ -5,12 +5,18 @@ import '../../data/local/database.dart';
 import '../../data/local/database_provider.dart';
 import '../../data/local/tables/goals_table.dart';
 import '../../data/local/tables/health_samples_table.dart';
+import '../../data/repositories/goal_repository.dart';
 
 final activeGoalsProvider = StreamProvider<List<Goal>>((ref) {
   final db = ref.watch(appDatabaseProvider);
-  return (db.select(
-    db.goals,
-  )..where((t) => t.isActive.equals(true) & t.deletedAt.isNull())).watch();
+  return (db.select(db.goals)
+        ..where((t) => t.isActive.equals(true) & t.deletedAt.isNull())
+        ..orderBy([(t) => OrderingTerm.desc(t.updatedAt)]))
+      .watch();
+});
+
+final goalRepositoryProvider = Provider<GoalRepository>((ref) {
+  return GoalRepository(ref.watch(appDatabaseProvider));
 });
 
 /// Reasonable defaults shown until the user sets their own goal — goal rings
