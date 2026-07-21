@@ -61,11 +61,10 @@ class AppDatabase extends _$AppDatabase {
     },
   );
 
-  /// Hard-deletes every locally-stored record (location/health/activity
-  /// history, goals, places, trips) on this device. Deliberately doesn't
-  /// touch `Devices` (still needed for sync identity) and doesn't tombstone
-  /// or propagate to the server — data already synced elsewhere is
-  /// untouched, this is a local wipe, not an account-wide delete.
+  /// Hard-deletes every locally-stored personal record on this device.
+  /// Deliberately doesn't touch `Devices` (still needed for sync identity)
+  /// and doesn't tombstone or propagate to the server — data already synced
+  /// elsewhere is untouched, this is a local wipe, not an account-wide delete.
   Future<void> wipeAllLocalData() async {
     await transaction(() async {
       await delete(locationPoints).go();
@@ -74,6 +73,8 @@ class AppDatabase extends _$AppDatabase {
       await delete(goals).go();
       await delete(places).go();
       await delete(trips).go();
+      await delete(workoutSessions).go();
+      await delete(notes).go();
     });
   }
 
