@@ -15,7 +15,7 @@ import '../../data/repositories/fitness_stats_repository.dart';
 import '../../shared/widgets/empty_state.dart';
 import '../fitness/fitness_providers.dart';
 
-enum _ChartMetric { steps, distance, activeMinutes, calories }
+enum _ChartMetric { steps, distance, activeMinutes, calories, weight }
 
 enum _ChartPeriod { week, month }
 
@@ -37,17 +37,42 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen> {
     _ChartMetric.distance => 'Distance (km)',
     _ChartMetric.activeMinutes => 'Active minutes',
     _ChartMetric.calories => 'Calories (est.)',
+    _ChartMetric.weight => 'Weight (kg)',
   };
 
+  // Only called for the DailyStats-backed metrics — weight is handled
+  // separately in build() since it isn't a daily rollup.
   double _valueFor(DailyStats day) => switch (_metric) {
     _ChartMetric.steps => day.steps.toDouble(),
     _ChartMetric.distance => day.distanceMeters / 1000,
     _ChartMetric.activeMinutes => day.activeMinutes.toDouble(),
     _ChartMetric.calories => day.calories,
+    _ChartMetric.weight => throw StateError('handled in build()'),
   };
 
   @override
   Widget build(BuildContext context) {
+    // Weight is a point-in-time reading, not a daily rollup — it comes
+    // straight from HealthSample history rather than DailyStats, and
+    // (unlike the other metrics) can have more than one reading a day.
+    if (_metric == _ChartMetric.weight) {
+      final weightHistory = _period == _ChartPeriod.week
+          ? ref.watch(weeklyWeightProvider)
+          : ref.watch(monthlyWeightProvider);
+      return Scaffold(
+        appBar: AppBar(title: const Text('Charts')),
+        body: weightHistory.when(
+          loading: () => const Center(child: CircularProgressIndicator()),
+          error: (e, _) => EmptyState(
+            icon: Icons.error_outline,
+            title: 'Could not load chart data',
+            message: '$e',
+          ),
+          data: (points) => _buildContent(context, points),
+        ),
+      );
+    }
+
     final stats = _period == _ChartPeriod.week
         ? ref.watch(weeklyStatsProvider)
         : ref.watch(monthlyStatsProvider);
@@ -61,12 +86,21 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen> {
           title: 'Could not load chart data',
           message: '$e',
         ),
-        data: (days) => _buildContent(context, days),
+        data: (days) => _buildContent(context, [
+          for (final day in days) (day.date, _valueFor(day)),
+        ]),
       ),
     );
   }
 
-  Widget _buildContent(BuildContext context, List<DailyStats> days) {
+  Widget _buildContent(BuildContext context, List<(DateTime, double)> points) {
+    // Weight readings simply don't exist until logged — an empty list means
+    // no data. The daily-rollup metrics always have one entry per day in
+    // range, so "no data" instead shows up as every value being zero.
+    final isEmpty = _metric == _ChartMetric.weight
+        ? points.isEmpty
+        : points.every((p) => p.$2 == 0);
+
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
@@ -88,6 +122,10 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen> {
                 ButtonSegment(
                   value: _ChartMetric.calories,
                   label: Text('Calories'),
+                ),
+                ButtonSegment(
+                  value: _ChartMetric.weight,
+                  label: Text('Weight'),
                 ),
               ],
               selected: {_metric},
@@ -112,7 +150,7 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen> {
               key: _chartKey,
               child: SizedBox(
                 height: 240,
-                child: days.every((d) => _valueFor(d) == 0)
+                child: isEmpty
                     ? Center(
                         child: Text(
                           'No $_metricLabel data for this period yet',
@@ -120,8 +158,8 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen> {
                         ),
                       )
                     : _TrendChart(
-                        days: days,
-                        valueOf: _valueFor,
+                        points: points,
+                        zeroBaseline: _metric != _ChartMetric.weight,
                         color: Theme.of(context).colorScheme.primary,
                       ),
               ),
@@ -133,7 +171,7 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen> {
           children: [
             Expanded(
               child: OutlinedButton.icon(
-                onPressed: _exporting ? null : () => _exportPng(days),
+                onPressed: _exporting ? null : () => _exportPng(points),
                 icon: const Icon(Icons.image_outlined),
                 label: const Text('Export PNG'),
               ),
@@ -141,7 +179,7 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen> {
             const SizedBox(width: 12),
             Expanded(
               child: OutlinedButton.icon(
-                onPressed: _exporting ? null : () => _exportCsv(days),
+                onPressed: _exporting ? null : () => _exportCsv(points),
                 icon: const Icon(Icons.table_chart_outlined),
                 label: const Text('Export CSV'),
               ),
@@ -152,7 +190,7 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen> {
     );
   }
 
-  Future<void> _exportPng(List<DailyStats> days) async {
+  Future<void> _exportPng(List<(DateTime, double)> points) async {
     setState(() => _exporting = true);
     try {
       final boundary =
@@ -173,13 +211,15 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen> {
     }
   }
 
-  Future<void> _exportCsv(List<DailyStats> days) async {
+  Future<void> _exportCsv(List<(DateTime, double)> points) async {
     setState(() => _exporting = true);
     try {
+      final dateFormat = _metric == _ChartMetric.weight
+          ? DateFormat('yyyy-MM-dd HH:mm')
+          : DateFormat('yyyy-MM-dd');
       final rows = <List<dynamic>>[
         ['date', _metricLabel],
-        for (final day in days)
-          [DateFormat('yyyy-MM-dd').format(day.date), _valueFor(day)],
+        for (final point in points) [dateFormat.format(point.$1), point.$2],
       ];
       final csv = Csv().encode(rows);
       final file = await _writeTempFile(
@@ -199,6 +239,7 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen> {
     _ChartMetric.distance => 'distance',
     _ChartMetric.activeMinutes => 'active_minutes',
     _ChartMetric.calories => 'calories',
+    _ChartMetric.weight => 'weight',
   };
 
   Future<File> _writeTempFile(String name, Uint8List bytes) async {
@@ -211,28 +252,41 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen> {
 
 class _TrendChart extends StatelessWidget {
   const _TrendChart({
-    required this.days,
-    required this.valueOf,
+    required this.points,
+    required this.zeroBaseline,
     required this.color,
   });
 
-  final List<DailyStats> days;
-  final double Function(DailyStats) valueOf;
+  final List<(DateTime, double)> points;
+
+  /// True for count-like metrics (steps, calories, ...) where zero is a
+  /// meaningful baseline. False for weight, which has no natural zero and
+  /// reads better as a tight range around the actual readings.
+  final bool zeroBaseline;
+
   final Color color;
 
   @override
   Widget build(BuildContext context) {
     final spots = [
-      for (var i = 0; i < days.length; i++)
-        FlSpot(i.toDouble(), valueOf(days[i])),
+      for (var i = 0; i < points.length; i++)
+        FlSpot(i.toDouble(), points[i].$2),
     ];
-    final maxY = spots.map((s) => s.y).fold<double>(0, (a, b) => a > b ? a : b);
-    final step = (days.length / 5).ceil().clamp(1, days.length);
+    final values = spots.map((s) => s.y);
+    final maxY = values.fold<double>(0, (a, b) => a > b ? a : b);
+    final minY = zeroBaseline
+        ? 0.0
+        : values.fold<double>(maxY, (a, b) => a < b ? a : b);
+    final step = (points.length / 5).ceil().clamp(1, points.length);
 
     return LineChart(
       LineChartData(
-        minY: 0,
-        maxY: maxY == 0 ? 1 : maxY * 1.2,
+        minY: zeroBaseline
+            ? 0
+            : (minY == maxY ? minY - 1 : minY - (maxY - minY) * 0.1),
+        maxY: maxY == 0
+            ? 1
+            : (zeroBaseline ? maxY * 1.2 : maxY + (maxY - minY) * 0.1),
         gridData: const FlGridData(show: true, drawVerticalLine: false),
         borderData: FlBorderData(show: false),
         titlesData: FlTitlesData(
@@ -247,13 +301,13 @@ class _TrendChart extends StatelessWidget {
               interval: step.toDouble(),
               getTitlesWidget: (value, meta) {
                 final index = value.round();
-                if (index < 0 || index >= days.length) {
+                if (index < 0 || index >= points.length) {
                   return const SizedBox.shrink();
                 }
                 return Padding(
                   padding: const EdgeInsets.only(top: 8),
                   child: Text(
-                    DateFormat('M/d').format(days[index].date),
+                    DateFormat('M/d').format(points[index].$1),
                     style: Theme.of(context).textTheme.labelSmall,
                   ),
                 );
