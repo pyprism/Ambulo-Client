@@ -182,13 +182,28 @@ class _PlaceEditorDialogState extends ConsumerState<_PlaceEditorDialog> {
   Future<void> _save() async {
     final latitude = double.tryParse(_latitude.text);
     final longitude = double.tryParse(_longitude.text);
-    if (_name.text.trim().isEmpty || latitude == null || longitude == null) {
+    final radius = double.tryParse(_radius.text);
+    if (_name.text.trim().isEmpty ||
+        latitude == null ||
+        longitude == null ||
+        radius == null ||
+        !latitude.isFinite ||
+        !longitude.isFinite ||
+        !radius.isFinite ||
+        latitude < -90 ||
+        latitude > 90 ||
+        longitude < -180 ||
+        longitude > 180 ||
+        radius <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Name and location are required')),
+        const SnackBar(
+          content: Text(
+            'Enter a name, valid coordinates, and a positive radius',
+          ),
+        ),
       );
       return;
     }
-    final radius = double.tryParse(_radius.text) ?? 100;
     setState(() => _saving = true);
     try {
       final repo = ref.read(placeRepositoryProvider);
