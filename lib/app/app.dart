@@ -6,6 +6,7 @@ import '../core/theme/app_theme.dart';
 import '../core/theme/theme_mode_controller.dart';
 import '../features/fitness/fitness_providers.dart';
 import '../features/friends/friends_providers.dart';
+import '../features/timeline/trip_history_provider.dart';
 import '../platform/fitness/step_tracking_provider.dart';
 import '../platform/location/location_tracking_provider.dart';
 
@@ -41,10 +42,14 @@ class _AmbuloAppState extends ConsumerState<AmbuloApp>
       // Fitness stats are point-in-time queries — without this they'd keep
       // showing whatever was true at first build (often 0) even though
       // Significant/Move tracking may have kept recording in the
-      // background while the app was away.
+      // background while the app was away. Same reasoning applies to
+      // "Time tracked" — it's a `Provider` computed against DateTime.now(),
+      // so it only re-reads the clock when something invalidates it, not
+      // just because midnight passed while the app was backgrounded.
       ref.invalidate(todayStatsProvider);
       ref.invalidate(weeklyStatsProvider);
       ref.invalidate(monthlyStatsProvider);
+      ref.invalidate(todayTripTimeMinutesProvider);
     } else if (state == AppLifecycleState.paused) {
       // Steps buffer in memory between debounced DB flushes (see
       // StepTrackingService) — flush on backgrounding so a buffered-but-
