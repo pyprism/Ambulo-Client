@@ -1,3 +1,4 @@
+import 'package:drift/drift.dart' show Value;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
@@ -89,16 +90,36 @@ class _WorkoutTile extends ConsumerWidget {
         DateFormat.yMMMd().add_jm().format(workout.startedAt.toLocal()),
       ),
       onTap: () => _showWorkoutEditor(context, ref, existing: workout),
-      trailing: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        crossAxisAlignment: CrossAxisAlignment.end,
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          if (duration.inMinutes > 0) Text('${duration.inMinutes} min'),
-          if (distanceKm > 0)
-            Text(
-              '${distanceKm.toStringAsFixed(2)} km',
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
+          Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              if (duration.inMinutes > 0) Text('${duration.inMinutes} min'),
+              if (distanceKm > 0)
+                Text(
+                  '${distanceKm.toStringAsFixed(2)} km',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+            ],
+          ),
+          PopupMenuButton<String>(
+            onSelected: (action) async {
+              if (action == 'edit') {
+                await _showWorkoutEditor(context, ref, existing: workout);
+              } else {
+                await ref
+                    .read(workoutSessionRepositoryProvider)
+                    .deleteWorkout(workout.id);
+              }
+            },
+            itemBuilder: (context) => const [
+              PopupMenuItem(value: 'edit', child: Text('Edit')),
+              PopupMenuItem(value: 'delete', child: Text('Delete')),
+            ],
+          ),
         ],
       ),
     );
@@ -130,6 +151,7 @@ class _WorkoutEditorDialogState extends ConsumerState<_WorkoutEditorDialog> {
   late ActivityType _activityType =
       widget.existing?.activityType ?? ActivityType.running;
   late DateTime _startedAt = widget.existing?.startedAt ?? DateTime.now();
+  late DateTime _endedAt = widget.existing?.endedAt ?? DateTime.now();
   late final _distance = TextEditingController(
     text: widget.existing?.distanceMeters == null
         ? ''
@@ -154,8 +176,33 @@ class _WorkoutEditorDialogState extends ConsumerState<_WorkoutEditorDialog> {
       initialTime: TimeOfDay.fromDateTime(_startedAt),
     );
     if (time == null) return;
+    setState(() {
+      _startedAt = DateTime(
+        date.year,
+        date.month,
+        date.day,
+        time.hour,
+        time.minute,
+      );
+      if (_endedAt.isBefore(_startedAt)) _endedAt = _startedAt;
+    });
+  }
+
+  Future<void> _pickEnd() async {
+    final date = await showDatePicker(
+      context: context,
+      initialDate: _endedAt,
+      firstDate: _startedAt,
+      lastDate: DateTime.now().add(const Duration(days: 1)),
+    );
+    if (date == null || !mounted) return;
+    final time = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.fromDateTime(_endedAt),
+    );
+    if (time == null) return;
     setState(
-      () => _startedAt = DateTime(
+      () => _endedAt = DateTime(
         date.year,
         date.month,
         date.day,
@@ -166,6 +213,12 @@ class _WorkoutEditorDialogState extends ConsumerState<_WorkoutEditorDialog> {
   }
 
   Future<void> _save() async {
+    if (_endedAt.isBefore(_startedAt)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('End time must be after the start time.')),
+      );
+      return;
+    }
     setState(() => _saving = true);
     try {
       final repo = ref.read(workoutSessionRepositoryProvider);
@@ -175,6 +228,7 @@ class _WorkoutEditorDialogState extends ConsumerState<_WorkoutEditorDialog> {
         await repo.addWorkout(
           activityType: _activityType,
           startedAt: _startedAt,
+          endedAt: _endedAt,
           distanceMeters: distanceKm == null ? null : distanceKm * 1000,
           calories: calories,
           notes: _notes.text.trim(),
@@ -184,8 +238,9 @@ class _WorkoutEditorDialogState extends ConsumerState<_WorkoutEditorDialog> {
           widget.existing!.id,
           activityType: _activityType,
           startedAt: _startedAt,
-          distanceMeters: distanceKm == null ? null : distanceKm * 1000,
-          calories: calories,
+          endedAt: Value(_endedAt),
+          distanceMeters: Value(distanceKm == null ? null : distanceKm * 1000),
+          calories: Value(calories),
           notes: _notes.text.trim(),
         );
       }
@@ -241,6 +296,12 @@ class _WorkoutEditorDialogState extends ConsumerState<_WorkoutEditorDialog> {
               onPressed: _pickStart,
               icon: const Icon(Icons.calendar_today_outlined),
               label: Text(DateFormat.yMMMd().add_jm().format(_startedAt)),
+            ),
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              onPressed: _pickEnd,
+              icon: const Icon(Icons.schedule_outlined),
+              label: Text(DateFormat.yMMMd().add_jm().format(_endedAt)),
             ),
             const SizedBox(height: 12),
             TextField(
