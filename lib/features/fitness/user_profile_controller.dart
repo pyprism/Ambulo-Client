@@ -10,6 +10,7 @@ enum BiologicalSex { male, female, other }
 
 const _dobKey = 'profile_date_of_birth';
 const _sexKey = 'profile_biological_sex';
+const _dirtyKey = 'profile_pending_upload';
 
 /// Personal-profile attributes used to personalize calorie estimates
 /// (`FitnessStatsRepository`). Weight/height are NOT here — they're
@@ -87,6 +88,7 @@ class UserProfileController extends Notifier<UserProfile> {
       );
       await setSex(sex, push: false);
     }
+    await retryPendingUpload();
   }
 
   Future<void> setDateOfBirth(DateTime? value, {bool push = true}) async {
@@ -119,13 +121,31 @@ class UserProfileController extends Notifier<UserProfile> {
     }
   }
 
+  Future<void> retryPendingUpload() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (prefs.getBool(_dirtyKey) != true ||
+        ref.read(authControllerProvider).value == null) {
+      return;
+    }
+    await _pushToServer({
+      'date_of_birth': state.dateOfBirth == null
+          ? null
+          : DateFormat('yyyy-MM-dd').format(state.dateOfBirth!),
+      'biological_sex': state.sex?.name ?? '',
+    });
+  }
+
   Future<void> _pushToServer(Map<String, dynamic> data) async {
-    if (ref.read(authControllerProvider).value == null) return;
+    final prefs = await SharedPreferences.getInstance();
+    if (ref.read(authControllerProvider).value == null) {
+      await prefs.setBool(_dirtyKey, true);
+      return;
+    }
     try {
       await ref.read(dioProvider).patch('/api/accounts/users/me/', data: data);
+      await prefs.remove(_dirtyKey);
     } catch (_) {
-      // Offline-first: the value is already saved locally; it'll reach the
-      // server on the next edit or the next time this device reconciles.
+      await prefs.setBool(_dirtyKey, true);
     }
   }
 }
