@@ -4,7 +4,11 @@ import 'package:drift/drift.dart';
 import 'package:xml/xml.dart';
 
 import '../local/database.dart';
+import '../local/tables/activity_samples_table.dart';
+import '../local/tables/goals_table.dart';
+import '../local/tables/health_samples_table.dart';
 import '../local/tables/location_points_table.dart';
+import '../local/tables/places_table.dart';
 import '../local/tables/sync_columns.dart';
 
 class ParsedLocationPoint {
@@ -33,14 +37,22 @@ class ImportPreview {
     required this.newPoints,
     required this.duplicateCount,
     required this.skippedCount,
+    this.backupRecords = const {},
   });
 
   final String formatLabel;
   final List<ParsedLocationPoint> newPoints;
   final int duplicateCount;
   final int skippedCount;
+  final Map<String, List<Map<String, dynamic>>> backupRecords;
 
-  int get totalParsed => newPoints.length + duplicateCount + skippedCount;
+  int get additionalRecordCount =>
+      backupRecords.values.fold(0, (total, records) => total + records.length);
+
+  bool get hasRecords => newPoints.isNotEmpty || additionalRecordCount > 0;
+
+  int get totalParsed =>
+      newPoints.length + duplicateCount + skippedCount + additionalRecordCount;
 }
 
 /// Thrown when a file doesn't match any client-parseable format. The caller
@@ -82,6 +94,7 @@ class ImportRepository {
         newPoints: const [],
         duplicateCount: 0,
         skippedCount: parsed.skippedCount,
+        backupRecords: parsed.backupRecords,
       );
     }
 
@@ -114,27 +127,184 @@ class ImportRepository {
       newPoints: newPoints,
       duplicateCount: duplicates,
       skippedCount: parsed.skippedCount,
+      backupRecords: parsed.backupRecords,
     );
   }
 
   Future<void> commit(ImportPreview preview) async {
-    if (preview.newPoints.isEmpty) return;
-    await _db.batch((batch) {
-      batch.insertAll(_db.locationPoints, [
-        for (final p in preview.newPoints)
-          LocationPointsCompanion.insert(
-            latitude: p.latitude,
-            longitude: p.longitude,
-            altitude: Value(p.altitude),
-            speed: Value(p.speed),
-            heading: Value(p.heading),
-            recordedAt: p.recordedAt,
-            monitoringMode: MonitoringMode.manual,
-            source: RecordSource.import,
-            syncState: const Value(SyncState.pendingUpload),
-          ),
-      ]);
+    if (!preview.hasRecords) return;
+    await _db.transaction(() async {
+      await _db.batch((batch) {
+        batch.insertAll(_db.locationPoints, [
+          for (final p in preview.newPoints)
+            LocationPointsCompanion.insert(
+              latitude: p.latitude,
+              longitude: p.longitude,
+              altitude: Value(p.altitude),
+              speed: Value(p.speed),
+              heading: Value(p.heading),
+              recordedAt: p.recordedAt,
+              monitoringMode: MonitoringMode.manual,
+              source: RecordSource.import,
+              syncState: const Value(SyncState.pendingUpload),
+            ),
+        ]);
+      });
+      await _commitBackupRecords(preview.backupRecords);
     });
+  }
+
+  Future<void> _commitBackupRecords(
+    Map<String, List<Map<String, dynamic>>> records,
+  ) async {
+    for (final raw in records['places'] ?? const []) {
+      await _db
+          .into(_db.places)
+          .insertOnConflictUpdate(
+            PlacesCompanion(
+              id: Value(raw['id'] as String),
+              name: Value(raw['name'] as String),
+              category: Value(
+                PlaceCategory.values.byName(raw['category'] as String),
+              ),
+              latitude: Value((raw['latitude'] as num).toDouble()),
+              longitude: Value((raw['longitude'] as num).toDouble()),
+              radiusMeters: Value((raw['radius_meters'] as num).toDouble()),
+              address: Value(raw['address'] as String? ?? ''),
+              source: const Value(RecordSource.import),
+              syncState: const Value(SyncState.pendingUpload),
+            ),
+          );
+    }
+    for (final raw in records['trips'] ?? const []) {
+      await _db
+          .into(_db.trips)
+          .insertOnConflictUpdate(
+            TripsCompanion(
+              id: Value(raw['id'] as String),
+              name: Value(raw['name'] as String? ?? ''),
+              startedAt: Value(DateTime.parse(raw['started_at'] as String)),
+              endedAt: Value(
+                raw['ended_at'] == null
+                    ? null
+                    : DateTime.parse(raw['ended_at'] as String),
+              ),
+              distanceMeters: Value(
+                (raw['distance_meters'] as num?)?.toDouble() ?? 0,
+              ),
+              pointCount: Value(raw['point_count'] as int? ?? 0),
+              startPlaceId: Value(raw['start_place_id'] as String?),
+              endPlaceId: Value(raw['end_place_id'] as String?),
+              source: const Value(RecordSource.import),
+              syncState: const Value(SyncState.pendingUpload),
+            ),
+          );
+    }
+    for (final raw in records['health_samples'] ?? const []) {
+      await _db
+          .into(_db.healthSamples)
+          .insertOnConflictUpdate(
+            HealthSamplesCompanion(
+              id: Value(raw['id'] as String),
+              metricType: Value(
+                HealthMetricType.values.byName(raw['metric_type'] as String),
+              ),
+              value: Value((raw['value'] as num).toDouble()),
+              unit: Value(raw['unit'] as String? ?? ''),
+              recordedAt: Value(DateTime.parse(raw['recorded_at'] as String)),
+              note: Value(raw['note'] as String? ?? ''),
+              source: const Value(RecordSource.import),
+              syncState: const Value(SyncState.pendingUpload),
+            ),
+          );
+    }
+    for (final raw in records['activity_samples'] ?? const []) {
+      await _db
+          .into(_db.activitySamples)
+          .insertOnConflictUpdate(
+            ActivitySamplesCompanion(
+              id: Value(raw['id'] as String),
+              activityType: Value(
+                ActivityType.values.byName(raw['activity_type'] as String),
+              ),
+              startedAt: Value(DateTime.parse(raw['started_at'] as String)),
+              endedAt: Value(
+                raw['ended_at'] == null
+                    ? null
+                    : DateTime.parse(raw['ended_at'] as String),
+              ),
+              confidence: Value((raw['confidence'] as num?)?.toDouble()),
+              distanceMeters: Value(
+                (raw['distance_meters'] as num?)?.toDouble(),
+              ),
+              steps: Value(raw['steps'] as int?),
+              source: const Value(RecordSource.import),
+              syncState: const Value(SyncState.pendingUpload),
+            ),
+          );
+    }
+    for (final raw in records['goals'] ?? const []) {
+      await _db
+          .into(_db.goals)
+          .insertOnConflictUpdate(
+            GoalsCompanion(
+              id: Value(raw['id'] as String),
+              metricType: Value(
+                HealthMetricType.values.byName(raw['metric_type'] as String),
+              ),
+              targetValue: Value((raw['target_value'] as num).toDouble()),
+              period: Value(GoalPeriod.values.byName(raw['period'] as String)),
+              startDate: Value(DateTime.parse(raw['start_date'] as String)),
+              endDate: Value(
+                raw['end_date'] == null
+                    ? null
+                    : DateTime.parse(raw['end_date'] as String),
+              ),
+              isActive: Value(raw['is_active'] as bool? ?? true),
+              source: const Value(RecordSource.import),
+              syncState: const Value(SyncState.pendingUpload),
+            ),
+          );
+    }
+    for (final raw in records['workout_sessions'] ?? const []) {
+      await _db
+          .into(_db.workoutSessions)
+          .insertOnConflictUpdate(
+            WorkoutSessionsCompanion(
+              id: Value(raw['id'] as String),
+              activityType: Value(
+                ActivityType.values.byName(raw['activity_type'] as String),
+              ),
+              startedAt: Value(DateTime.parse(raw['started_at'] as String)),
+              endedAt: Value(
+                raw['ended_at'] == null
+                    ? null
+                    : DateTime.parse(raw['ended_at'] as String),
+              ),
+              distanceMeters: Value(
+                (raw['distance_meters'] as num?)?.toDouble(),
+              ),
+              calories: Value((raw['calories'] as num?)?.toDouble()),
+              notes: Value(raw['notes'] as String? ?? ''),
+              source: const Value(RecordSource.import),
+              syncState: const Value(SyncState.pendingUpload),
+            ),
+          );
+    }
+    for (final raw in records['notes'] ?? const []) {
+      await _db
+          .into(_db.notes)
+          .insertOnConflictUpdate(
+            NotesCompanion(
+              id: Value(raw['id'] as String),
+              content: Value(raw['content'] as String),
+              noteDate: Value(DateTime.parse(raw['note_date'] as String)),
+              context: Value(raw['context'] as String? ?? ''),
+              source: const Value(RecordSource.import),
+              syncState: const Value(SyncState.pendingUpload),
+            ),
+          );
+    }
   }
 
   String _dedupeKey(DateTime t, double lat, double lon) =>
@@ -346,6 +516,21 @@ class ImportRepository {
       formatLabel: 'Ambulo JSON',
       points: points,
       skippedCount: skipped,
+      backupRecords: {
+        for (final key in const [
+          'places',
+          'trips',
+          'health_samples',
+          'activity_samples',
+          'goals',
+          'workout_sessions',
+          'notes',
+        ])
+          key: [
+            for (final item in decoded[key] as List? ?? const [])
+              if (item is Map<String, dynamic>) item,
+          ],
+      },
     );
   }
 
@@ -405,9 +590,11 @@ class _ParsedFile {
     required this.formatLabel,
     required this.points,
     required this.skippedCount,
+    this.backupRecords = const {},
   });
 
   final String formatLabel;
   final List<ParsedLocationPoint> points;
   final int skippedCount;
+  final Map<String, List<Map<String, dynamic>>> backupRecords;
 }
