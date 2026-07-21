@@ -217,7 +217,11 @@ class _ImportExportScreenState extends ConsumerState<ImportExportScreen> {
     await ref.read(importRepositoryProvider).commit(preview);
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Imported ${preview.newPoints.length} points')),
+      SnackBar(
+        content: Text(
+          'Imported ${preview.newPoints.length + preview.additionalRecordCount} records',
+        ),
+      ),
     );
   }
 
@@ -285,6 +289,10 @@ class _ImportPreviewDialog extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text('${preview.newPoints.length} new points to add'),
+          if (preview.additionalRecordCount > 0)
+            Text(
+              '${preview.additionalRecordCount} additional backup records to add',
+            ),
           if (preview.duplicateCount > 0)
             Text('${preview.duplicateCount} already in your history (skipped)'),
           if (preview.skippedCount > 0)
@@ -297,7 +305,7 @@ class _ImportPreviewDialog extends StatelessWidget {
           child: const Text('Cancel'),
         ),
         FilledButton(
-          onPressed: preview.newPoints.isEmpty
+          onPressed: !preview.hasRecords
               ? null
               : () => Navigator.of(context).pop(true),
           child: const Text('Import'),
