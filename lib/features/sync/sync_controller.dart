@@ -7,6 +7,7 @@ import '../../data/repositories/sync_repository.dart';
 import '../auth/auth_controller.dart';
 import '../fitness/fitness_providers.dart';
 import '../friends/friends_providers.dart';
+import '../timeline/trip_history_provider.dart';
 
 final syncRepositoryProvider = Provider<SyncRepository>((ref) {
   return SyncRepository(ref.watch(appDatabaseProvider), ref.watch(dioProvider));
@@ -36,10 +37,14 @@ class SyncController extends AsyncNotifier<SyncCounts> {
       ref.invalidate(notificationsProvider);
       // Fitness stats are point-in-time queries, not reactive to the tables
       // they read — without this, newly-downloaded steps/activity stay
-      // invisible on the dashboard until the app restarts.
+      // invisible on the dashboard until the app restarts. Trip time is
+      // usually caught by its own reactive stream when a trip is
+      // downloaded, but a sync with no new trips (e.g. right after
+      // midnight) still needs the clock re-read to roll over to today.
       ref.invalidate(todayStatsProvider);
       ref.invalidate(weeklyStatsProvider);
       ref.invalidate(monthlyStatsProvider);
+      ref.invalidate(todayTripTimeMinutesProvider);
       return null;
     } catch (e) {
       state = AsyncData(await repo.counts());
