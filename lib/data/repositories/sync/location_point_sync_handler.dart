@@ -56,9 +56,9 @@ class LocationPointSyncHandler implements SyncTypeHandler {
     required List<String> conflicts,
     required List<Map<String, dynamic>> rejected,
   }) async {
-    for (final id in accepted) {
-      await markSynced(id);
-    }
+    // The upload response has no authoritative server revision. Keep accepted
+    // rows pending until the following download stores that revision; retrying
+    // the client UUID is idempotent and preserves conflict protection.
     for (final id in conflicts) {
       await (_db.update(
         _db.locationPoints,
