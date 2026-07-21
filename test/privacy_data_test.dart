@@ -85,6 +85,24 @@ void main() {
               source: RecordSource.location,
             ),
           );
+      await db
+          .into(db.workoutSessions)
+          .insert(
+            WorkoutSessionsCompanion.insert(
+              activityType: ActivityType.running,
+              startedAt: DateTime.now(),
+              source: RecordSource.manual,
+            ),
+          );
+      await db
+          .into(db.notes)
+          .insert(
+            NotesCompanion.insert(
+              content: 'Private note',
+              noteDate: DateTime.now(),
+              source: RecordSource.manual,
+            ),
+          );
 
       await db.wipeAllLocalData();
 
@@ -94,6 +112,8 @@ void main() {
       expect(await db.select(db.goals).get(), isEmpty);
       expect(await db.select(db.places).get(), isEmpty);
       expect(await db.select(db.trips).get(), isEmpty);
+      expect(await db.select(db.workoutSessions).get(), isEmpty);
+      expect(await db.select(db.notes).get(), isEmpty);
       // Device identity is sync-critical, not "tracked personal data" — a
       // local wipe must not silently break the app's own sync identity.
       expect(await db.select(db.devices).get(), hasLength(1));
