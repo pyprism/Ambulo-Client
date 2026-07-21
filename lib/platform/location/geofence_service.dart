@@ -1,7 +1,6 @@
 import 'package:drift/drift.dart';
 
 import '../../data/local/database.dart';
-import '../../data/local/sync_mutation.dart';
 import 'geo_math.dart';
 
 /// Computes enter/leave transitions locally so they're visible immediately,
@@ -38,7 +37,6 @@ class GeofenceService {
       final isInside = distance <= place.radiusMeters;
       if (isInside == place.currentlyInside) continue;
 
-      final bump = SyncBump(place.localRev);
       await (_db.update(_db.places)..where((t) => t.id.equals(place.id))).write(
         PlacesCompanion(
           currentlyInside: Value(isInside),
@@ -49,9 +47,6 @@ class GeofenceService {
               ? Value(place.lastExitedAt)
               : Value(recordedAt),
           stateAsOf: Value(recordedAt),
-          updatedAt: bump.updatedAt,
-          localRev: bump.localRev,
-          syncState: bump.syncState,
         ),
       );
     }
