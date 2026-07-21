@@ -1,4 +1,3 @@
-import 'dart:io';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
@@ -8,7 +7,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../../data/repositories/fitness_stats_repository.dart';
@@ -202,9 +200,17 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen> {
       if (byteData == null) return;
 
       final bytes = byteData.buffer.asUint8List();
-      final file = await _writeTempFile('${_metricFileName}_chart.png', bytes);
       await SharePlus.instance.share(
-        ShareParams(files: [XFile(file.path)], text: '$_metricLabel chart'),
+        ShareParams(
+          files: [
+            XFile.fromData(
+              bytes,
+              name: '${_metricFileName}_chart.png',
+              mimeType: 'image/png',
+            ),
+          ],
+          text: '$_metricLabel chart',
+        ),
       );
     } finally {
       if (mounted) setState(() => _exporting = false);
@@ -222,12 +228,17 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen> {
         for (final point in points) [dateFormat.format(point.$1), point.$2],
       ];
       final csv = Csv().encode(rows);
-      final file = await _writeTempFile(
-        '${_metricFileName}_data.csv',
-        Uint8List.fromList(csv.codeUnits),
-      );
       await SharePlus.instance.share(
-        ShareParams(files: [XFile(file.path)], text: '$_metricLabel data'),
+        ShareParams(
+          files: [
+            XFile.fromData(
+              Uint8List.fromList(csv.codeUnits),
+              name: '${_metricFileName}_data.csv',
+              mimeType: 'text/csv',
+            ),
+          ],
+          text: '$_metricLabel data',
+        ),
       );
     } finally {
       if (mounted) setState(() => _exporting = false);
@@ -241,13 +252,6 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen> {
     _ChartMetric.calories => 'calories',
     _ChartMetric.weight => 'weight',
   };
-
-  Future<File> _writeTempFile(String name, Uint8List bytes) async {
-    final dir = await getTemporaryDirectory();
-    final file = File('${dir.path}/$name');
-    await file.writeAsBytes(bytes);
-    return file;
-  }
 }
 
 class _TrendChart extends StatelessWidget {
