@@ -1,10 +1,15 @@
+import 'package:drift/drift.dart' show Value;
+import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:ambulo/data/local/database.dart';
 import 'package:ambulo/data/local/sync_mutation.dart';
 import 'package:ambulo/data/local/sync_wire.dart';
 import 'package:ambulo/data/local/tables/activity_samples_table.dart';
+import 'package:ambulo/data/local/tables/goals_table.dart';
 import 'package:ambulo/data/local/tables/health_samples_table.dart';
 import 'package:ambulo/data/local/tables/sync_columns.dart';
+import 'package:ambulo/features/fitness/goals_provider.dart';
 import 'package:ambulo/platform/location/activity_classifier.dart';
 import 'package:ambulo/platform/location/geo_math.dart';
 
@@ -68,5 +73,75 @@ void main() {
     expect(bump.localRev.value, 42);
     expect(bump.syncState.value, SyncState.pendingUpload);
     expect(bump.updatedAt.value, isA<DateTime>());
+  });
+
+  group('goalTargetFor', () {
+    late AppDatabase db;
+
+    setUp(() => db = AppDatabase.forTesting(NativeDatabase.memory()));
+    tearDown(() => db.close());
+
+    Future<Goal> insertGoal({
+      required HealthMetricType metricType,
+      required double targetValue,
+      GoalPeriod period = GoalPeriod.daily,
+    }) async {
+      return db
+          .into(db.goals)
+          .insertReturning(
+            GoalsCompanion.insert(
+              metricType: metricType,
+              targetValue: targetValue,
+              period: Value(period),
+              startDate: DateTime.utc(2026, 1, 1),
+              source: RecordSource.manual,
+            ),
+          );
+    }
+
+    test('falls back to the built-in default when no goal is set', () {
+      expect(
+        goalTargetFor(HealthMetricType.steps, const []),
+        defaultDailyGoals[HealthMetricType.steps],
+      );
+    });
+
+    test('falls back to 1 for a metric with no built-in default', () {
+      expect(goalTargetFor(HealthMetricType.sleep, const []), 1);
+    });
+
+    test('prefers the user-set daily goal over the default', () async {
+      final goal = await insertGoal(
+        metricType: HealthMetricType.steps,
+        targetValue: 8000,
+      );
+
+      expect(goalTargetFor(HealthMetricType.steps, [goal]), 8000);
+    });
+
+    test('ignores a goal for a different metric type', () async {
+      final goal = await insertGoal(
+        metricType: HealthMetricType.calories,
+        targetValue: 2000,
+      );
+
+      expect(
+        goalTargetFor(HealthMetricType.steps, [goal]),
+        defaultDailyGoals[HealthMetricType.steps],
+      );
+    });
+
+    test('ignores a non-daily goal for the same metric type', () async {
+      final goal = await insertGoal(
+        metricType: HealthMetricType.steps,
+        targetValue: 50000,
+        period: GoalPeriod.weekly,
+      );
+
+      expect(
+        goalTargetFor(HealthMetricType.steps, [goal]),
+        defaultDailyGoals[HealthMetricType.steps],
+      );
+    });
   });
 }
