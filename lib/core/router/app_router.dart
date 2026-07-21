@@ -78,7 +78,12 @@ final appRouterProvider = Provider<GoRouter>((ref) {
 
       // Web: login/register is always the gate.
       if (kIsWeb) {
-        final isAuthenticated = ref.read(authControllerProvider).value != null;
+        final auth = ref.read(authControllerProvider);
+        // A persisted session can be temporarily unverifiable while offline.
+        // Keep the current route available in that state; only a definitive
+        // null session should send the user to the login form.
+        if (auth.isLoading || auth.hasError) return null;
+        final isAuthenticated = auth.value != null;
         if (!isAuthenticated) {
           return _authRoutes.contains(loc) ? null : '/login';
         }
