@@ -1,5 +1,6 @@
 import 'package:drift/drift.dart';
 
+import '../../features/fitness/user_profile_controller.dart';
 import '../local/database.dart';
 import '../local/tables/activity_samples_table.dart';
 import '../local/tables/health_samples_table.dart';
@@ -36,15 +37,60 @@ const _maxVerticalAccuracyMeters = 10.0;
 const _floorHeightMeters = 3.0;
 const _minSustainedClimbPoints = 2;
 
+// The flat-rate fallback constants below (0.04 kcal/step, 5.0 kcal/active
+// minute) were tuned for roughly this reference body weight; when the user
+// has entered their own weight, scale by weightKg/_referenceWeightKg instead
+// of using a single fixed rate for everyone.
+const _referenceWeightKg = 80.0;
+
 /// Local, on-device fitness rollups — computed on demand from
 /// HealthSamples/ActivitySamples/LocationPoints rather than a separate
 /// materialized rollup table, so it always reflects this device's data
 /// whether or not the server has been reached. Calorie/floor figures are
 /// explicit estimates, not clinical measurements.
 class FitnessStatsRepository {
-  FitnessStatsRepository(this._db);
+  FitnessStatsRepository(this._db, [this._profile]);
 
   final AppDatabase _db;
+  final UserProfile? _profile;
+
+  /// Mifflin-St Jeor BMR (kcal/day). Null unless weight, height, age, and
+  /// sex are all available — a partial profile isn't enough to estimate
+  /// this. Weight/height come from the most recent HealthSample reading of
+  /// that type, not the profile — they're time-series data, not static
+  /// attributes (see `UserProfile` doc comment).
+  double? _bmrPerDay(double? weightKg, double? heightCm) {
+    final profile = _profile;
+    final age = profile?.age;
+    final sex = profile?.sex;
+    if (weightKg == null || heightCm == null || age == null || sex == null) {
+      return null;
+    }
+    final base = 10 * weightKg + 6.25 * heightCm - 5 * age;
+    final sexOffset = switch (sex) {
+      BiologicalSex.male => 5.0,
+      BiologicalSex.female => -161.0,
+      // No sex-specific constant applies; split the difference between the
+      // male/female offsets rather than guessing one or the other.
+      BiologicalSex.other => -78.0,
+    };
+    return base + sexOffset;
+  }
+
+  /// Most recent reading of a manually-tracked metric (weight, height) —
+  /// unlike steps, these aren't summed across the day, just the latest
+  /// known value regardless of when it was recorded.
+  Future<double?> latestSampleValue(HealthMetricType metric) async {
+    final row =
+        await (_db.select(_db.healthSamples)
+              ..where(
+                (t) => t.metricType.equalsValue(metric) & t.deletedAt.isNull(),
+              )
+              ..orderBy([(t) => OrderingTerm.desc(t.recordedAt)])
+              ..limit(1))
+            .getSingleOrNull();
+    return row?.value;
+  }
 
   DateTime _startOfDay(DateTime d) => DateTime(d.year, d.month, d.day);
 
@@ -64,7 +110,8 @@ class FitnessStatsRepository {
       ..where(
         _db.healthSamples.metricType.equalsValue(HealthMetricType.steps) &
             _db.healthSamples.recordedAt.isBiggerOrEqualValue(start) &
-            _db.healthSamples.recordedAt.isSmallerThanValue(end),
+            _db.healthSamples.recordedAt.isSmallerThanValue(end) &
+            _db.healthSamples.deletedAt.isNull(),
       );
     final stepsRow = await stepsQuery.getSingle();
     final steps = (stepsRow.read(stepsSum) ?? 0).round();
@@ -73,7 +120,8 @@ class FitnessStatsRepository {
         await (_db.select(_db.activitySamples)..where(
               (t) =>
                   t.startedAt.isSmallerThanValue(end) &
-                  (t.endedAt.isBiggerOrEqualValue(start) | t.endedAt.isNull()),
+                  (t.endedAt.isBiggerOrEqualValue(start) | t.endedAt.isNull()) &
+                  t.deletedAt.isNull(),
             ))
             .get();
 
@@ -107,7 +155,8 @@ class FitnessStatsRepository {
               ..where(
                 (t) =>
                     t.recordedAt.isBiggerOrEqualValue(start) &
-                    t.recordedAt.isSmallerThanValue(end),
+                    t.recordedAt.isSmallerThanValue(end) &
+                    t.deletedAt.isNull(),
               )
               ..orderBy([(t) => OrderingTerm.asc(t.recordedAt)]))
             .get();
@@ -150,9 +199,28 @@ class FitnessStatsRepository {
       previousAltitude = altitude;
     }
 
-    // Rough estimate: ~0.04 kcal/step plus a flat rate for sustained moving
-    // activity — not a clinical calculation.
-    final calories = steps * 0.04 + activeMinutes * 5.0;
+    // With a full personal profile: BMR (resting burn) + activity on top,
+    // scaled by the user's actual weight instead of the flat reference rate.
+    // Without one: the original rough flat-rate estimate — not a clinical
+    // calculation either way.
+    final weightKg = await latestSampleValue(HealthMetricType.weight);
+    final heightCm = await latestSampleValue(HealthMetricType.height);
+    final bmr = _bmrPerDay(weightKg, heightCm);
+    final double calories;
+    if (bmr != null) {
+      final weightScale = weightKg! / _referenceWeightKg;
+      final effectiveEnd = now.isBefore(end) ? now : end;
+      final elapsedSeconds = effectiveEnd.isAfter(start)
+          ? effectiveEnd.difference(start).inSeconds
+          : 0;
+      final dayFraction = (elapsedSeconds / const Duration(days: 1).inSeconds)
+          .clamp(0.0, 1.0);
+      final activeCalories =
+          steps * 0.04 * weightScale + activeMinutes * 5.0 * weightScale;
+      calories = bmr * dayFraction + activeCalories;
+    } else {
+      calories = steps * 0.04 + activeMinutes * 5.0;
+    }
 
     return DailyStats(
       date: start,
@@ -173,5 +241,28 @@ class FitnessStatsRepository {
       cursor = cursor.add(const Duration(days: 1));
     }
     return days;
+  }
+
+  /// Raw weight readings in range, oldest first — unlike `statsForRange`
+  /// this isn't a per-day rollup, since weight is a point-in-time reading,
+  /// not something to sum across a day.
+  Future<List<(DateTime, double)>> weightHistory(
+    DateTime start,
+    DateTime end,
+  ) async {
+    final rangeStart = _startOfDay(start);
+    final rangeEnd = _startOfDay(end).add(const Duration(days: 1));
+    final rows =
+        await (_db.select(_db.healthSamples)
+              ..where(
+                (t) =>
+                    t.metricType.equalsValue(HealthMetricType.weight) &
+                    t.recordedAt.isBiggerOrEqualValue(rangeStart) &
+                    t.recordedAt.isSmallerThanValue(rangeEnd) &
+                    t.deletedAt.isNull(),
+              )
+              ..orderBy([(t) => OrderingTerm.asc(t.recordedAt)]))
+            .get();
+    return [for (final row in rows) (row.recordedAt, row.value)];
   }
 }
