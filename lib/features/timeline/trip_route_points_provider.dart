@@ -17,9 +17,9 @@ final tripRoutePointsProvider = StreamProvider.autoDispose
             ..where(
               (t) =>
                   t.recordedAt.isBiggerOrEqualValue(trip.startedAt) &
-                  t.recordedAt.isSmallerThanValue(
-                    trip.endedAt ?? DateTime.now(),
-                  ) &
+                  (trip.endedAt == null
+                      ? t.recordedAt.isSmallerThanValue(DateTime.now())
+                      : t.recordedAt.isSmallerOrEqualValue(trip.endedAt!)) &
                   t.deletedAt.isNull(),
             )
             ..orderBy([(t) => OrderingTerm.asc(t.recordedAt)]))
