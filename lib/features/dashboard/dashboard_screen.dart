@@ -10,6 +10,7 @@ import '../../shared/widgets/empty_state.dart';
 import '../../shared/widgets/goal_ring.dart';
 import '../fitness/fitness_providers.dart';
 import '../fitness/goals_provider.dart';
+import '../timeline/trip_history_provider.dart';
 import '../tracking/monitoring_mode_controller.dart';
 import '../tracking/tracking_pause_controller.dart';
 
@@ -20,6 +21,7 @@ class DashboardScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final today = ref.watch(todayStatsProvider);
     final weekly = ref.watch(weeklyStatsProvider);
+    final tripMinutes = ref.watch(todayTripTimeMinutesProvider);
     final activeGoals = ref.watch(activeGoalsProvider).value ?? const [];
     final isPaused = PlatformSupport.supportsSensorCollection
         ? ref.watch(trackingPausedProvider)
@@ -38,7 +40,8 @@ class DashboardScreen extends ConsumerWidget {
           final hasAnyData =
               stats.steps > 0 ||
               stats.distanceMeters > 0 ||
-              stats.activeMinutes > 0;
+              stats.activeMinutes > 0 ||
+              tripMinutes > 0;
 
           return ListView(
             padding: const EdgeInsets.all(16),
@@ -93,9 +96,26 @@ class DashboardScreen extends ConsumerWidget {
                         value: '${stats.calories.round()} kcal',
                         color: AppColors.darkGreen,
                       ),
+                      _StatCard(
+                        icon: Icons.schedule,
+                        label: 'Time tracked',
+                        value: '$tripMinutes min',
+                        color: AppColors.darkBlue,
+                      ),
                     ],
                   );
                 },
+              ),
+              const SizedBox(height: 8),
+              Text(
+                '"Time tracked" is full trip time (door to door, including '
+                'stops and driving) from the Timeline; "Active minutes" is '
+                'walking/running/cycling only, and only while Significant '
+                'or Move mode is tracking trips — they measure different '
+                'things and won\'t match.',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(context).colorScheme.outline,
+                ),
               ),
               const SizedBox(height: 24),
               _SectionHeader('Goals'),
