@@ -86,10 +86,16 @@ class FriendLocation {
 /// push (APNs/FCM) wired up — `social.tasks.notify_friend_geofence_event`
 /// only writes an in-app `Notification` row — so this in-app, poll-based
 /// list *is* the notification feature, not a stand-in for it.
-enum AppNotificationType { friendRequest, friendGeofence, unknown }
+enum AppNotificationType {
+  friendRequest,
+  friendAccept,
+  friendGeofence,
+  unknown,
+}
 
 AppNotificationType _notificationTypeFromWire(String value) => switch (value) {
   'friend_request' => AppNotificationType.friendRequest,
+  'friend_accept' => AppNotificationType.friendAccept,
   'friend_geofence' => AppNotificationType.friendGeofence,
   _ => AppNotificationType.unknown,
 };
@@ -125,6 +131,8 @@ class AppNotification {
   String get message => switch (type) {
     AppNotificationType.friendRequest =>
       '${payload['from_username'] ?? 'Someone'} sent you a friend request',
+    AppNotificationType.friendAccept =>
+      '${payload['from_username'] ?? 'Someone'} accepted your friend request',
     AppNotificationType.friendGeofence =>
       '${payload['friend_username'] ?? 'A friend'} ${payload['event'] ?? 'entered'} '
           '${payload['place'] ?? 'a place'}',
