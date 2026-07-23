@@ -10,6 +10,7 @@ import '../../data/local/database_provider.dart';
 import '../../data/local/secure_token_storage.dart';
 import '../../data/local/sync_preferences.dart';
 import '../../data/repositories/device_repository.dart';
+import '../sync/sync_controller.dart';
 import 'auth_user.dart';
 
 /// Null = signed out / local-only. Non-null = signed in to the configured
@@ -28,7 +29,11 @@ class AuthController extends AsyncNotifier<AuthUser?> {
     });
     final token = await _tokenStorage.readAccessToken();
     if (token == null) return null;
-    return _fetchMe();
+    final user = await _fetchMe();
+    if (user != null) {
+      unawaited(ref.read(syncControllerProvider.notifier).syncNow());
+    }
+    return user;
   }
 
   Future<AuthUser?> _fetchMe() async {
@@ -75,6 +80,7 @@ class AuthController extends AsyncNotifier<AuthUser?> {
       await ref
           .read(deviceRepositoryProvider)
           .registerWithServer(dio, userId: user.id);
+      unawaited(ref.read(syncControllerProvider.notifier).syncNow());
       return null;
     } on DioException catch (e) {
       return describeDioError(e);
