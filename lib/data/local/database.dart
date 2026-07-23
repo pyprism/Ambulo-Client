@@ -33,7 +33,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.connection);
 
   @override
-  int get schemaVersion => 4;
+  int get schemaVersion => 5;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -57,6 +57,9 @@ class AppDatabase extends _$AppDatabase {
         await m.createIndex(idxHealthSamplesSyncState);
         await m.createIndex(idxActivitySamplesSyncState);
         await m.createIndex(idxPlacesDeletedAt);
+      }
+      if (from < 5) {
+        await m.addColumn(places, places.notifyFriends);
       }
     },
   );

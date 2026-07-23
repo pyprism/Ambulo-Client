@@ -4625,6 +4625,21 @@ class $PlacesTable extends Places with TableInfo<$PlacesTable, Place> {
     type: DriftSqlType.dateTime,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _notifyFriendsMeta = const VerificationMeta(
+    'notifyFriends',
+  );
+  @override
+  late final GeneratedColumn<bool> notifyFriends = GeneratedColumn<bool>(
+    'notify_friends',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("notify_friends" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -4647,6 +4662,7 @@ class $PlacesTable extends Places with TableInfo<$PlacesTable, Place> {
     lastEnteredAt,
     lastExitedAt,
     stateAsOf,
+    notifyFriends,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -4777,6 +4793,15 @@ class $PlacesTable extends Places with TableInfo<$PlacesTable, Place> {
         stateAsOf.isAcceptableOrUnknown(data['state_as_of']!, _stateAsOfMeta),
       );
     }
+    if (data.containsKey('notify_friends')) {
+      context.handle(
+        _notifyFriendsMeta,
+        notifyFriends.isAcceptableOrUnknown(
+          data['notify_friends']!,
+          _notifyFriendsMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -4872,6 +4897,10 @@ class $PlacesTable extends Places with TableInfo<$PlacesTable, Place> {
         DriftSqlType.dateTime,
         data['${effectivePrefix}state_as_of'],
       ),
+      notifyFriends: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}notify_friends'],
+      )!,
     );
   }
 
@@ -4909,6 +4938,7 @@ class Place extends DataClass implements Insertable<Place> {
   final DateTime? lastEnteredAt;
   final DateTime? lastExitedAt;
   final DateTime? stateAsOf;
+  final bool notifyFriends;
   const Place({
     required this.id,
     this.userId,
@@ -4930,6 +4960,7 @@ class Place extends DataClass implements Insertable<Place> {
     this.lastEnteredAt,
     this.lastExitedAt,
     this.stateAsOf,
+    required this.notifyFriends,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -4980,6 +5011,7 @@ class Place extends DataClass implements Insertable<Place> {
     if (!nullToAbsent || stateAsOf != null) {
       map['state_as_of'] = Variable<DateTime>(stateAsOf);
     }
+    map['notify_friends'] = Variable<bool>(notifyFriends);
     return map;
   }
 
@@ -5019,6 +5051,7 @@ class Place extends DataClass implements Insertable<Place> {
       stateAsOf: stateAsOf == null && nullToAbsent
           ? const Value.absent()
           : Value(stateAsOf),
+      notifyFriends: Value(notifyFriends),
     );
   }
 
@@ -5054,6 +5087,7 @@ class Place extends DataClass implements Insertable<Place> {
       lastEnteredAt: serializer.fromJson<DateTime?>(json['lastEnteredAt']),
       lastExitedAt: serializer.fromJson<DateTime?>(json['lastExitedAt']),
       stateAsOf: serializer.fromJson<DateTime?>(json['stateAsOf']),
+      notifyFriends: serializer.fromJson<bool>(json['notifyFriends']),
     );
   }
   @override
@@ -5086,6 +5120,7 @@ class Place extends DataClass implements Insertable<Place> {
       'lastEnteredAt': serializer.toJson<DateTime?>(lastEnteredAt),
       'lastExitedAt': serializer.toJson<DateTime?>(lastExitedAt),
       'stateAsOf': serializer.toJson<DateTime?>(stateAsOf),
+      'notifyFriends': serializer.toJson<bool>(notifyFriends),
     };
   }
 
@@ -5110,6 +5145,7 @@ class Place extends DataClass implements Insertable<Place> {
     Value<DateTime?> lastEnteredAt = const Value.absent(),
     Value<DateTime?> lastExitedAt = const Value.absent(),
     Value<DateTime?> stateAsOf = const Value.absent(),
+    bool? notifyFriends,
   }) => Place(
     id: id ?? this.id,
     userId: userId.present ? userId.value : this.userId,
@@ -5133,6 +5169,7 @@ class Place extends DataClass implements Insertable<Place> {
         : this.lastEnteredAt,
     lastExitedAt: lastExitedAt.present ? lastExitedAt.value : this.lastExitedAt,
     stateAsOf: stateAsOf.present ? stateAsOf.value : this.stateAsOf,
+    notifyFriends: notifyFriends ?? this.notifyFriends,
   );
   Place copyWithCompanion(PlacesCompanion data) {
     return Place(
@@ -5164,6 +5201,9 @@ class Place extends DataClass implements Insertable<Place> {
           ? data.lastExitedAt.value
           : this.lastExitedAt,
       stateAsOf: data.stateAsOf.present ? data.stateAsOf.value : this.stateAsOf,
+      notifyFriends: data.notifyFriends.present
+          ? data.notifyFriends.value
+          : this.notifyFriends,
     );
   }
 
@@ -5189,13 +5229,14 @@ class Place extends DataClass implements Insertable<Place> {
           ..write('currentlyInside: $currentlyInside, ')
           ..write('lastEnteredAt: $lastEnteredAt, ')
           ..write('lastExitedAt: $lastExitedAt, ')
-          ..write('stateAsOf: $stateAsOf')
+          ..write('stateAsOf: $stateAsOf, ')
+          ..write('notifyFriends: $notifyFriends')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode => Object.hash(
+  int get hashCode => Object.hashAll([
     id,
     userId,
     deviceId,
@@ -5216,7 +5257,8 @@ class Place extends DataClass implements Insertable<Place> {
     lastEnteredAt,
     lastExitedAt,
     stateAsOf,
-  );
+    notifyFriends,
+  ]);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -5240,7 +5282,8 @@ class Place extends DataClass implements Insertable<Place> {
           other.currentlyInside == this.currentlyInside &&
           other.lastEnteredAt == this.lastEnteredAt &&
           other.lastExitedAt == this.lastExitedAt &&
-          other.stateAsOf == this.stateAsOf);
+          other.stateAsOf == this.stateAsOf &&
+          other.notifyFriends == this.notifyFriends);
 }
 
 class PlacesCompanion extends UpdateCompanion<Place> {
@@ -5264,6 +5307,7 @@ class PlacesCompanion extends UpdateCompanion<Place> {
   final Value<DateTime?> lastEnteredAt;
   final Value<DateTime?> lastExitedAt;
   final Value<DateTime?> stateAsOf;
+  final Value<bool> notifyFriends;
   final Value<int> rowid;
   const PlacesCompanion({
     this.id = const Value.absent(),
@@ -5286,6 +5330,7 @@ class PlacesCompanion extends UpdateCompanion<Place> {
     this.lastEnteredAt = const Value.absent(),
     this.lastExitedAt = const Value.absent(),
     this.stateAsOf = const Value.absent(),
+    this.notifyFriends = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   PlacesCompanion.insert({
@@ -5309,6 +5354,7 @@ class PlacesCompanion extends UpdateCompanion<Place> {
     this.lastEnteredAt = const Value.absent(),
     this.lastExitedAt = const Value.absent(),
     this.stateAsOf = const Value.absent(),
+    this.notifyFriends = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : source = Value(source),
        name = Value(name),
@@ -5335,6 +5381,7 @@ class PlacesCompanion extends UpdateCompanion<Place> {
     Expression<DateTime>? lastEnteredAt,
     Expression<DateTime>? lastExitedAt,
     Expression<DateTime>? stateAsOf,
+    Expression<bool>? notifyFriends,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -5358,6 +5405,7 @@ class PlacesCompanion extends UpdateCompanion<Place> {
       if (lastEnteredAt != null) 'last_entered_at': lastEnteredAt,
       if (lastExitedAt != null) 'last_exited_at': lastExitedAt,
       if (stateAsOf != null) 'state_as_of': stateAsOf,
+      if (notifyFriends != null) 'notify_friends': notifyFriends,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -5383,6 +5431,7 @@ class PlacesCompanion extends UpdateCompanion<Place> {
     Value<DateTime?>? lastEnteredAt,
     Value<DateTime?>? lastExitedAt,
     Value<DateTime?>? stateAsOf,
+    Value<bool>? notifyFriends,
     Value<int>? rowid,
   }) {
     return PlacesCompanion(
@@ -5406,6 +5455,7 @@ class PlacesCompanion extends UpdateCompanion<Place> {
       lastEnteredAt: lastEnteredAt ?? this.lastEnteredAt,
       lastExitedAt: lastExitedAt ?? this.lastExitedAt,
       stateAsOf: stateAsOf ?? this.stateAsOf,
+      notifyFriends: notifyFriends ?? this.notifyFriends,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -5479,6 +5529,9 @@ class PlacesCompanion extends UpdateCompanion<Place> {
     if (stateAsOf.present) {
       map['state_as_of'] = Variable<DateTime>(stateAsOf.value);
     }
+    if (notifyFriends.present) {
+      map['notify_friends'] = Variable<bool>(notifyFriends.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -5508,6 +5561,7 @@ class PlacesCompanion extends UpdateCompanion<Place> {
           ..write('lastEnteredAt: $lastEnteredAt, ')
           ..write('lastExitedAt: $lastExitedAt, ')
           ..write('stateAsOf: $stateAsOf, ')
+          ..write('notifyFriends: $notifyFriends, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -10239,6 +10293,7 @@ typedef $$PlacesTableCreateCompanionBuilder =
       Value<DateTime?> lastEnteredAt,
       Value<DateTime?> lastExitedAt,
       Value<DateTime?> stateAsOf,
+      Value<bool> notifyFriends,
       Value<int> rowid,
     });
 typedef $$PlacesTableUpdateCompanionBuilder =
@@ -10263,6 +10318,7 @@ typedef $$PlacesTableUpdateCompanionBuilder =
       Value<DateTime?> lastEnteredAt,
       Value<DateTime?> lastExitedAt,
       Value<DateTime?> stateAsOf,
+      Value<bool> notifyFriends,
       Value<int> rowid,
     });
 
@@ -10377,6 +10433,11 @@ class $$PlacesTableFilterComposer
     column: $table.stateAsOf,
     builder: (column) => ColumnFilters(column),
   );
+
+  ColumnFilters<bool> get notifyFriends => $composableBuilder(
+    column: $table.notifyFriends,
+    builder: (column) => ColumnFilters(column),
+  );
 }
 
 class $$PlacesTableOrderingComposer
@@ -10487,6 +10548,11 @@ class $$PlacesTableOrderingComposer
     column: $table.stateAsOf,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<bool> get notifyFriends => $composableBuilder(
+    column: $table.notifyFriends,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$PlacesTableAnnotationComposer
@@ -10565,6 +10631,11 @@ class $$PlacesTableAnnotationComposer
 
   GeneratedColumn<DateTime> get stateAsOf =>
       $composableBuilder(column: $table.stateAsOf, builder: (column) => column);
+
+  GeneratedColumn<bool> get notifyFriends => $composableBuilder(
+    column: $table.notifyFriends,
+    builder: (column) => column,
+  );
 }
 
 class $$PlacesTableTableManager
@@ -10615,6 +10686,7 @@ class $$PlacesTableTableManager
                 Value<DateTime?> lastEnteredAt = const Value.absent(),
                 Value<DateTime?> lastExitedAt = const Value.absent(),
                 Value<DateTime?> stateAsOf = const Value.absent(),
+                Value<bool> notifyFriends = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => PlacesCompanion(
                 id: id,
@@ -10637,6 +10709,7 @@ class $$PlacesTableTableManager
                 lastEnteredAt: lastEnteredAt,
                 lastExitedAt: lastExitedAt,
                 stateAsOf: stateAsOf,
+                notifyFriends: notifyFriends,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -10661,6 +10734,7 @@ class $$PlacesTableTableManager
                 Value<DateTime?> lastEnteredAt = const Value.absent(),
                 Value<DateTime?> lastExitedAt = const Value.absent(),
                 Value<DateTime?> stateAsOf = const Value.absent(),
+                Value<bool> notifyFriends = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => PlacesCompanion.insert(
                 id: id,
@@ -10683,6 +10757,7 @@ class $$PlacesTableTableManager
                 lastEnteredAt: lastEnteredAt,
                 lastExitedAt: lastExitedAt,
                 stateAsOf: stateAsOf,
+                notifyFriends: notifyFriends,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
