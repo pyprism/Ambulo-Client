@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -6,6 +8,7 @@ import '../core/theme/app_theme.dart';
 import '../core/theme/theme_mode_controller.dart';
 import '../features/fitness/fitness_providers.dart';
 import '../features/friends/friends_providers.dart';
+import '../features/sync/sync_controller.dart';
 import '../features/timeline/trip_history_provider.dart';
 import '../platform/fitness/step_tracking_provider.dart';
 import '../platform/location/location_tracking_provider.dart';
@@ -36,6 +39,10 @@ class _AmbuloAppState extends ConsumerState<AmbuloApp>
     // Friend sharing is explicitly poll-based (pull on sync/foreground),
     // never a live push — this is the "foreground" half of that contract.
     if (state == AppLifecycleState.resumed) {
+      // Pulls any server-side changes (e.g. a sync from another device)
+      // down to this session; syncNow() itself invalidates the fitness/trip
+      // providers below once new data actually lands.
+      unawaited(ref.read(syncControllerProvider.notifier).syncNow());
       ref.invalidate(friendshipsProvider);
       ref.invalidate(friendLocationsProvider);
       ref.invalidate(notificationsProvider);
