@@ -130,6 +130,16 @@ class _TripDetailBody extends ConsumerWidget {
       trip.startedAt,
     );
     final routePoints = ref.watch(tripRoutePointsProvider(trip.id)).value;
+    final avgSpeedKmh = (trip.distanceMeters > 0 && duration.inSeconds > 0)
+        ? (trip.distanceMeters / 1000) / (duration.inSeconds / 3600)
+        : null;
+    final recordedSpeeds = [
+      for (final p in routePoints ?? const <LocationPoint>[])
+        if (p.speed != null) p.speed!,
+    ];
+    final maxSpeedKmh = recordedSpeeds.isEmpty
+        ? null
+        : recordedSpeeds.reduce((a, b) => a > b ? a : b) * 3.6;
 
     return ListView(
       padding: const EdgeInsets.all(16),
@@ -162,6 +172,18 @@ class _TripDetailBody extends ConsumerWidget {
                   value:
                       '${(trip.distanceMeters / 1000).toStringAsFixed(2)} km',
                 ),
+                if (avgSpeedKmh != null)
+                  _DetailRow(
+                    icon: Icons.speed_outlined,
+                    label: 'Average speed',
+                    value: '${avgSpeedKmh.toStringAsFixed(1)} km/h',
+                  ),
+                if (maxSpeedKmh != null)
+                  _DetailRow(
+                    icon: Icons.speed,
+                    label: 'Max speed',
+                    value: '${maxSpeedKmh.toStringAsFixed(1)} km/h',
+                  ),
                 if (startPlaceName != null || endPlaceName != null)
                   _DetailRow(
                     icon: Icons.route_outlined,
