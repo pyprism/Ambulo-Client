@@ -152,6 +152,7 @@ class _PlaceEditorDialogState extends ConsumerState<_PlaceEditorDialog> {
   );
   late PlaceCategory _category =
       widget.existing?.category ?? PlaceCategory.custom;
+  late bool _notifyFriends = widget.existing?.notifyFriends ?? false;
   bool _locating = false;
 
   Future<void> _useCurrentLocation() async {
@@ -215,6 +216,7 @@ class _PlaceEditorDialogState extends ConsumerState<_PlaceEditorDialog> {
           longitude: longitude,
           radiusMeters: radius,
           address: _address.text.trim(),
+          notifyFriends: _notifyFriends,
         );
       } else {
         await repo.updatePlace(
@@ -225,6 +227,7 @@ class _PlaceEditorDialogState extends ConsumerState<_PlaceEditorDialog> {
           longitude: longitude,
           radiusMeters: radius,
           address: _address.text.trim(),
+          notifyFriends: _notifyFriends,
         );
       }
       if (mounted) Navigator.of(context).pop();
@@ -267,6 +270,15 @@ class _PlaceEditorDialogState extends ConsumerState<_PlaceEditorDialog> {
               controller: _address,
               decoration: const InputDecoration(
                 labelText: 'Address (optional)',
+              ),
+            ),
+            SwitchListTile.adaptive(
+              contentPadding: EdgeInsets.zero,
+              value: _notifyFriends,
+              onChanged: (value) => setState(() => _notifyFriends = value),
+              title: const Text('Notify friends'),
+              subtitle: const Text(
+                'Send friends enter and leave alerts for this place',
               ),
             ),
             const SizedBox(height: 12),
