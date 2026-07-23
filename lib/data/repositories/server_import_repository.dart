@@ -55,7 +55,7 @@ class ImportJobStatus {
   final String errorMessage;
 
   bool get isPreviewReady => status == 'preview_ready';
-  bool get isDone => status == 'done';
+  bool get isDone => status == 'completed' || status == 'partial';
   bool get isFailed => status == 'failed';
 }
 
@@ -90,6 +90,8 @@ class ServerImportRepository {
     return ImportJobStatus.fromJson(response.data as Map<String, dynamic>);
   }
 
+  /// Reversions are queued by the server (HTTP 202); callers can refresh the
+  /// job to observe its updated summary when they expose this action in UI.
   Future<void> revert(String jobId) async {
     await _dio.post('/api/imports/$jobId/revert/');
   }
