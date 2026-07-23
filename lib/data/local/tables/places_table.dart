@@ -25,4 +25,6 @@ class Places extends Table with SyncableColumns {
   DateTimeColumn get lastEnteredAt => dateTime().nullable()();
   DateTimeColumn get lastExitedAt => dateTime().nullable()();
   DateTimeColumn get stateAsOf => dateTime().nullable()();
+  BoolColumn get notifyFriends =>
+      boolean().withDefault(const Constant(false))();
 }
