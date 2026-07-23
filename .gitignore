@@ -31,6 +31,10 @@ migrate_working_dir/
 /build/
 /coverage/
 
+# Locally installed Ansible collections are reproducibly installed by deploy.sh
+# and do not belong in source control.
+/deploy/ansible/collections/
+
 # Symbolication related
 app.*.symbols
 

@@ -1,0 +1,12 @@
+---
+# Deployment target configuration.
+# Update these values when the remote host or destination changes.
+deploy_host: ip
+deploy_port: 22
+deploy_user: prism
+deploy_ssh_common_args: '-o ForwardAgent=yes'
+deploy_target_dir: /opt/Ambulo-Client
+deploy_directory_mode: '0755'
+deploy_local_build_dir: "{{ playbook_dir }}/../../build/web"
+deploy_rsync_opts:
+  - '--exclude=.git'

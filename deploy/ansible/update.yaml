@@ -1,0 +1,65 @@
+---
+- name: Validate local build artifacts and register deployment host
+  hosts: localhost
+  gather_facts: false
+  vars_files:
+    - deploy_config.yaml
+
+  tasks:
+    - name: Ensure local Flutter web build directory exists
+      ansible.builtin.stat:
+        path: "{{ deploy_local_build_dir }}"
+      register: local_build_directory
+
+    - name: Fail when local Flutter web build directory is missing
+      ansible.builtin.fail:
+        msg: >-
+          Local build directory '{{ deploy_local_build_dir }}' does not exist.
+          Run the Flutter web build before deploying.
+      when: not local_build_directory.stat.exists
+
+    - name: Register deployment target host
+      ansible.builtin.add_host:
+        name: deploy_target
+        groups: deploy_targets
+        ansible_host: "{{ deploy_host }}"
+        ansible_port: "{{ deploy_port }}"
+        ansible_user: "{{ deploy_user }}"
+        ansible_ssh_common_args: "{{ deploy_ssh_common_args }}"
+
+- name: Copy local Flutter web build to remote server
+  hosts: deploy_targets
+  gather_facts: false
+  vars_files:
+    - deploy_config.yaml
+
+  tasks:
+    - name: Ensure remote deployment directory exists
+      ansible.builtin.file:
+        path: "{{ deploy_target_dir }}"
+        state: directory
+        mode: "{{ deploy_directory_mode }}"
+        owner: "{{ deploy_user }}"
+        group: "{{ deploy_user }}"
+      become: true
+
+    - name: Build rsync command arguments
+      ansible.builtin.set_fact:
+        deploy_rsync_argv: >-
+          {{
+            ['rsync', '--archive', '--delete', '--compress', '--itemize-changes',
+             '--rsh=ssh -p ' ~ (deploy_port | string) ~ ' ' ~ (deploy_ssh_common_args | default('')), ]
+            + (deploy_rsync_opts | default([]))
+            + [deploy_local_build_dir ~ '/', deploy_user ~ '@' ~ deploy_host ~ ':' ~ deploy_target_dir ~ '/']
+          }}
+
+    - name: Synchronize Flutter web build files with rsync
+      ansible.builtin.command:
+        argv: "{{ deploy_rsync_argv }}"
+      delegate_to: localhost
+      become: false
+      register: rsync_result
+      failed_when: rsync_result.rc != 0
+      changed_when: rsync_result.stdout | trim != ''
+      environment:
+        SSH_AUTH_SOCK: "{{ lookup('ansible.builtin.env', 'SSH_AUTH_SOCK') }}"
