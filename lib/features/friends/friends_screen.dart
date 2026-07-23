@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -354,15 +355,21 @@ class _ShareCodeCard extends StatelessWidget {
                       }
                     },
                   ),
-                  IconButton(
-                    tooltip: 'Share',
-                    icon: const Icon(Icons.share_outlined),
-                    onPressed: () => SharePlus.instance.share(
-                      ShareParams(
-                        text: 'Add me on Ambulo — my share code is $shareCode',
+                  // Web has no reliable native share sheet (no navigator.share
+                  // support outside HTTPS on Chrome/Edge/Safari, and the
+                  // mailto: fallback is silent when there's no mail handler),
+                  // so Copy above is the only share action offered there.
+                  if (!kIsWeb)
+                    IconButton(
+                      tooltip: 'Share',
+                      icon: const Icon(Icons.share_outlined),
+                      onPressed: () => SharePlus.instance.share(
+                        ShareParams(
+                          text:
+                              'Add me on Ambulo — my share code is $shareCode',
+                        ),
                       ),
                     ),
-                  ),
                 ],
               ),
       ),
