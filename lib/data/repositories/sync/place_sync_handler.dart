@@ -30,6 +30,7 @@ class PlaceSyncHandler implements SyncTypeHandler {
       'longitude': row.longitude,
       'radius_meters': row.radiusMeters,
       'address': row.address,
+      'notify_friends': row.notifyFriends,
       // currently_inside/last_entered_at/last_exited_at are server
       // read-only — computed locally for offline responsiveness, but never
       // sent upstream.
@@ -137,6 +138,7 @@ class PlaceSyncHandler implements SyncTypeHandler {
             longitude: Value((json['longitude'] as num).toDouble()),
             radiusMeters: Value((json['radius_meters'] as num).toDouble()),
             address: Value(json['address'] as String? ?? ''),
+            notifyFriends: Value(json['notify_friends'] as bool? ?? false),
             currentlyInside: currentlyInside,
             lastEnteredAt: lastEnteredAt,
             lastExitedAt: lastExitedAt,
