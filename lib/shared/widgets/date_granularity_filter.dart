@@ -53,15 +53,77 @@ class _DateGranularityFilterState extends State<DateGranularityFilter> {
 
   Future<void> _pickAnchor() async {
     final now = DateTime.now();
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: _anchor ?? now,
-      firstDate: DateTime(now.year - 20),
-      lastDate: now,
-    );
+    final firstDate = DateTime(now.year - 20);
+    final picked = switch (_granularity) {
+      _Granularity.year => await _pickYear(
+        initialDate: _anchor ?? now,
+        firstDate: firstDate,
+        lastDate: now,
+      ),
+      _Granularity.month => await _pickMonth(
+        initialDate: _anchor ?? now,
+        firstDate: firstDate,
+        lastDate: now,
+      ),
+      _Granularity.all || _Granularity.day => await _pickDay(
+        initialDate: _anchor ?? now,
+        firstDate: firstDate,
+        lastDate: now,
+      ),
+    };
     if (picked == null) return;
     setState(() => _anchor = picked);
     widget.onChanged(_range);
+  }
+
+  Future<DateTime?> _pickDay({
+    required DateTime initialDate,
+    required DateTime firstDate,
+    required DateTime lastDate,
+  }) {
+    return showDatePicker(
+      context: context,
+      initialDate: initialDate,
+      firstDate: firstDate,
+      lastDate: lastDate,
+    );
+  }
+
+  Future<DateTime?> _pickYear({
+    required DateTime initialDate,
+    required DateTime firstDate,
+    required DateTime lastDate,
+  }) {
+    return showDialog<DateTime>(
+      context: context,
+      builder: (dialogContext) => Dialog(
+        child: SizedBox(
+          width: 320,
+          height: 320,
+          child: YearPicker(
+            firstDate: firstDate,
+            lastDate: lastDate,
+            selectedDate: initialDate,
+            onChanged: (date) => Navigator.pop(dialogContext, date),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<DateTime?> _pickMonth({
+    required DateTime initialDate,
+    required DateTime firstDate,
+    required DateTime lastDate,
+  }) {
+    return showDialog<DateTime>(
+      context: context,
+      builder: (dialogContext) => _MonthPickerDialog(
+        initialDate: initialDate,
+        firstDate: firstDate,
+        lastDate: lastDate,
+      ),
+    );
   }
 
   Future<void> _setGranularity(_Granularity granularity) async {
@@ -104,6 +166,121 @@ class _DateGranularityFilterState extends State<DateGranularityFilter> {
             onDeleted: () => _setGranularity(_Granularity.all),
           ),
       ],
+    );
+  }
+}
+
+/// Month-only picker dialog — year navigator + 12-month grid, no day view.
+class _MonthPickerDialog extends StatefulWidget {
+  const _MonthPickerDialog({
+    required this.initialDate,
+    required this.firstDate,
+    required this.lastDate,
+  });
+
+  final DateTime initialDate;
+  final DateTime firstDate;
+  final DateTime lastDate;
+
+  @override
+  State<_MonthPickerDialog> createState() => _MonthPickerDialogState();
+}
+
+class _MonthPickerDialogState extends State<_MonthPickerDialog> {
+  late int _year = widget.initialDate.year;
+
+  bool _monthEnabled(int month) {
+    final date = DateTime(_year, month, 1);
+    if (date.isBefore(DateTime(widget.firstDate.year, widget.firstDate.month)) ) {
+      return false;
+    }
+    if (date.isAfter(DateTime(widget.lastDate.year, widget.lastDate.month))) {
+      return false;
+    }
+    return true;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      child: SizedBox(
+        width: 320,
+        height: 320,
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.chevron_left),
+                    onPressed: _year > widget.firstDate.year
+                        ? () => setState(() => _year--)
+                        : null,
+                  ),
+                  Text(
+                    '$_year',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.chevron_right),
+                    onPressed: _year < widget.lastDate.year
+                        ? () => setState(() => _year++)
+                        : null,
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: GridView.builder(
+                padding: const EdgeInsets.all(12),
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 3,
+                  childAspectRatio: 1.8,
+                ),
+                itemCount: 12,
+                itemBuilder: (context, index) {
+                  final month = index + 1;
+                  final enabled = _monthEnabled(month);
+                  final selected =
+                      _year == widget.initialDate.year &&
+                      month == widget.initialDate.month;
+                  return Padding(
+                    padding: const EdgeInsets.all(4),
+                    child: enabled
+                        ? (selected
+                              ? FilledButton(
+                                  onPressed: () => Navigator.pop(
+                                    context,
+                                    DateTime(_year, month, 1),
+                                  ),
+                                  child: Text(
+                                    DateFormat.MMM().format(DateTime(0, month)),
+                                  ),
+                                )
+                              : OutlinedButton(
+                                  onPressed: () => Navigator.pop(
+                                    context,
+                                    DateTime(_year, month, 1),
+                                  ),
+                                  child: Text(
+                                    DateFormat.MMM().format(DateTime(0, month)),
+                                  ),
+                                ))
+                        : OutlinedButton(
+                            onPressed: null,
+                            child: Text(
+                              DateFormat.MMM().format(DateTime(0, month)),
+                            ),
+                          ),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
