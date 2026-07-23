@@ -21,6 +21,7 @@ class PlaceRepository {
     required double longitude,
     required double radiusMeters,
     String address = '',
+    bool notifyFriends = false,
   }) async {
     await _db
         .into(_db.places)
@@ -32,6 +33,7 @@ class PlaceRepository {
             longitude: longitude,
             radiusMeters: Value(radiusMeters),
             address: Value(address),
+            notifyFriends: Value(notifyFriends),
             source: RecordSource.manual,
             syncState: const Value(SyncState.pendingUpload),
           ),
@@ -46,6 +48,7 @@ class PlaceRepository {
     double? longitude,
     double? radiusMeters,
     String? address,
+    bool? notifyFriends,
   }) async {
     final current = await (_db.select(
       _db.places,
@@ -61,6 +64,9 @@ class PlaceRepository {
             ? const Value.absent()
             : Value(radiusMeters),
         address: address == null ? const Value.absent() : Value(address),
+        notifyFriends: notifyFriends == null
+            ? const Value.absent()
+            : Value(notifyFriends),
         updatedAt: bump.updatedAt,
         localRev: bump.localRev,
         syncState: bump.syncState,
