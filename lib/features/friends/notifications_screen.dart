@@ -63,6 +63,7 @@ class _NotificationTile extends ConsumerWidget {
 
   IconData get _icon => switch (notification.type) {
     AppNotificationType.friendRequest => Icons.person_add_alt_outlined,
+    AppNotificationType.friendAccept => Icons.person_add_alt_1_outlined,
     AppNotificationType.friendGeofence => Icons.place_outlined,
     AppNotificationType.unknown => Icons.notifications_none,
   };
