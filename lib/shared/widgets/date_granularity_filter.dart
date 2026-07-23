@@ -191,7 +191,9 @@ class _MonthPickerDialogState extends State<_MonthPickerDialog> {
 
   bool _monthEnabled(int month) {
     final date = DateTime(_year, month, 1);
-    if (date.isBefore(DateTime(widget.firstDate.year, widget.firstDate.month)) ) {
+    if (date.isBefore(
+      DateTime(widget.firstDate.year, widget.firstDate.month),
+    )) {
       return false;
     }
     if (date.isAfter(DateTime(widget.lastDate.year, widget.lastDate.month))) {
