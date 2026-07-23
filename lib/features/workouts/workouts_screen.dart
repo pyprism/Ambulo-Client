@@ -79,6 +79,9 @@ class _WorkoutTile extends ConsumerWidget {
       workout.startedAt,
     );
     final distanceKm = (workout.distanceMeters ?? 0) / 1000;
+    final avgSpeedKmh = (distanceKm > 0 && duration.inSeconds > 0)
+        ? distanceKm / (duration.inSeconds / 3600)
+        : null;
 
     return ListTile(
       leading: Icon(
@@ -101,6 +104,11 @@ class _WorkoutTile extends ConsumerWidget {
               if (distanceKm > 0)
                 Text(
                   '${distanceKm.toStringAsFixed(2)} km',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              if (avgSpeedKmh != null)
+                Text(
+                  '${avgSpeedKmh.toStringAsFixed(1)} km/h avg',
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
             ],
