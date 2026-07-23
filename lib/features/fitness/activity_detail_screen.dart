@@ -163,6 +163,9 @@ class _ActivityDetailBody extends StatelessWidget {
       segment.startedAt,
     );
     final distanceKm = (segment.distanceMeters ?? 0) / 1000;
+    final avgSpeedKmh = (distanceKm > 0 && duration.inSeconds > 0)
+        ? distanceKm / (duration.inSeconds / 3600)
+        : null;
 
     return ListView(
       padding: const EdgeInsets.all(16),
@@ -206,6 +209,12 @@ class _ActivityDetailBody extends StatelessWidget {
                     icon: Icons.straighten,
                     label: 'Distance',
                     value: '${distanceKm.toStringAsFixed(2)} km',
+                  ),
+                if (avgSpeedKmh != null)
+                  _DetailRow(
+                    icon: Icons.speed_outlined,
+                    label: 'Average speed',
+                    value: '${avgSpeedKmh.toStringAsFixed(1)} km/h',
                   ),
                 if (segment.steps != null)
                   _DetailRow(
