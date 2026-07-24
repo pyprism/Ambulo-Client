@@ -11,6 +11,7 @@ import '../../data/local/sync_mutation.dart';
 import '../../data/local/tables/activity_samples_table.dart';
 import '../../data/local/tables/location_points_table.dart';
 import '../../data/local/tables/sync_columns.dart';
+import '../notifications/notification_service.dart';
 import '../platform_support.dart';
 import 'activity_classifier.dart';
 import 'geo_math.dart';
@@ -114,6 +115,7 @@ class LocationTrackingService {
   Future<LocationTrackingStatus> _applyMode(MonitoringMode mode) async {
     await _subscription?.cancel();
     _subscription = null;
+    await _safeCancelMoveReminder();
     await _positionMutations;
     await _closeCurrentSegment();
     await _closeCurrentTrip();
@@ -143,7 +145,29 @@ class LocationTrackingService {
           onError: (e, st) => debugPrint('location stream error: $e\n$st'),
           cancelOnError: false,
         );
+    if (mode == MonitoringMode.move) {
+      await _safeScheduleMoveReminder();
+    }
     return LocationTrackingStatus.active;
+  }
+
+  // The Move-mode reminder is a courtesy, not core tracking behavior — a
+  // missing notification permission/plugin channel (e.g. under test) must
+  // never take down the position stream it's attached to.
+  Future<void> _safeScheduleMoveReminder() async {
+    try {
+      await NotificationService.instance.scheduleMoveModeReminder();
+    } catch (e, st) {
+      debugPrint('move mode reminder schedule failed: $e\n$st');
+    }
+  }
+
+  Future<void> _safeCancelMoveReminder() async {
+    try {
+      await NotificationService.instance.cancelMoveModeReminder();
+    } catch (e, st) {
+      debugPrint('move mode reminder cancel failed: $e\n$st');
+    }
   }
 
   /// Stream listeners don't await async callbacks. Queue the whole pipeline
@@ -546,6 +570,7 @@ class LocationTrackingService {
   Future<void> _dispose() async {
     await _subscription?.cancel();
     _subscription = null;
+    await _safeCancelMoveReminder();
     await _positionMutations;
     await _closeCurrentSegment();
     await _closeCurrentTrip();
