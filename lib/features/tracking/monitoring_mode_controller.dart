@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../data/local/tables/location_points_table.dart';
+import '../../platform/notifications/notification_service.dart';
 
 const _prefsKey = 'monitoring_mode';
 
@@ -41,6 +42,19 @@ class MonitoringModeController extends Notifier<MonitoringMode> {
     state = mode;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_prefsKey, mode.name);
+    if (mode == MonitoringMode.move) {
+      // Ask here, not when the reminder is actually scheduled — this call
+      // always comes from a foreground user tap, whereas the schedule is
+      // set from `LocationTrackingService` which may run well after the
+      // fact (restore on app start) or right before the app backgrounds.
+      // A permission prompt hours later, while backgrounded, can't show.
+      //
+      // Best-effort: a missing notification plugin channel (e.g. under
+      // test, or an unsupported platform) must never block picking Move.
+      try {
+        await NotificationService.instance.requestPermission();
+      } catch (_) {}
+    }
   }
 }
 
