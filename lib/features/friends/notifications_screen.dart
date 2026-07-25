@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:intl/intl.dart';
 
 import '../../data/repositories/friend_repository.dart';
+import '../../shared/format/app_date_format.dart';
 import '../../shared/widgets/empty_state.dart';
 import 'friends_providers.dart';
 
@@ -78,9 +78,7 @@ class _NotificationTile extends ConsumerWidget {
             : Theme.of(context).colorScheme.outline,
       ),
       title: Text(notification.message),
-      subtitle: Text(
-        DateFormat.yMMMd().add_jm().format(notification.createdAt.toLocal()),
-      ),
+      subtitle: Text(AppDateFormat.dateTime(notification.createdAt.toLocal())),
       trailing: notification.isUnread
           ? const Icon(Icons.circle, size: 10)
           : null,
