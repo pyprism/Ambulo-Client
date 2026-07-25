@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart' hide ActivityType;
 import 'package:go_router/go_router.dart';
-import 'package:intl/intl.dart';
 
 import '../../core/server/server_config_controller.dart';
 import '../../core/theme/theme_mode_controller.dart';
@@ -10,6 +9,7 @@ import '../../data/local/database_provider.dart';
 import '../../data/local/tables/health_samples_table.dart';
 import '../../data/local/tables/location_points_table.dart';
 import '../../platform/platform_support.dart';
+import '../../shared/format/app_date_format.dart';
 import '../../platform/fitness/step_tracking_provider.dart';
 import '../../platform/fitness/step_tracking_service.dart';
 import '../../platform/location/location_tracking_provider.dart';
@@ -514,7 +514,7 @@ class _PersonalDataSection extends ConsumerWidget {
           subtitle: Text(
             profile.dateOfBirth == null
                 ? 'Not set'
-                : '${DateFormat.yMMMd().format(profile.dateOfBirth!)} '
+                : '${AppDateFormat.date(profile.dateOfBirth!)} '
                       '(${profile.age} years)',
           ),
           trailing: const Icon(Icons.edit_outlined),
@@ -762,7 +762,7 @@ class _SyncStatusTile extends ConsumerWidget {
                 Text(
                   counts.lastSyncAt == null
                       ? 'Never synced'
-                      : 'Last synced ${DateFormat.yMMMd().add_jm().format(counts.lastSyncAt!.toLocal())}',
+                      : 'Last synced ${AppDateFormat.dateTime(counts.lastSyncAt!.toLocal())}',
                   style: Theme.of(context).textTheme.bodyMedium,
                 ),
                 const SizedBox(height: 8),
