@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart' show DateTimeRange;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/local/database_provider.dart';
@@ -48,6 +49,25 @@ final monthlyWeightProvider = FutureProvider<List<(DateTime, double)>>((ref) {
       .watch(fitnessStatsRepositoryProvider)
       .weightHistory(now.subtract(const Duration(days: 29)), now);
 });
+
+/// Arbitrary custom date range for Charts — unlike the fixed week/month
+/// providers above, the range comes from the user via a date-range picker.
+final statsForRangeProvider =
+    FutureProvider.family<List<DailyStats>, DateTimeRange>((ref, range) {
+      return ref
+          .watch(fitnessStatsRepositoryProvider)
+          .statsForRange(range.start, range.end);
+    });
+
+final weightHistoryForRangeProvider =
+    FutureProvider.family<List<(DateTime, double)>, DateTimeRange>((
+      ref,
+      range,
+    ) {
+      return ref
+          .watch(fitnessStatsRepositoryProvider)
+          .weightHistory(range.start, range.end);
+    });
 
 /// Most recent weight/height readings — used to show a current value on the
 /// Personal data settings screen without pulling in the whole history.
