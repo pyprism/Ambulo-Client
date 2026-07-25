@@ -127,9 +127,7 @@ class NotificationService {
           AndroidFlutterLocalNotificationsPlugin
         >();
     if (android == null) return;
-    await android.deleteNotificationChannel(
-      channelId: _geolocatorChannelId,
-    );
+    await android.deleteNotificationChannel(channelId: _geolocatorChannelId);
     await android.createNotificationChannel(
       const AndroidNotificationChannel(
         _geolocatorChannelId,
