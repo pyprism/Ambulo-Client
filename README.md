@@ -65,3 +65,4 @@ skip themselves automatically (printing why) if that server isn't reachable
 — start your server's dev runner first if you want those to actually run
 rather than skip.
 
+### Icon credit: <a href="https://www.flaticon.com/free-icon/run_4357645?" title="trail running icons">Trail running icons created by Magnific - Flaticon</a>
