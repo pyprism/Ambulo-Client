@@ -22,7 +22,9 @@ android {
         applicationId = "com.ambulo.ambulo"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
-        minSdk = flutter.minSdkVersion
+        // Health Connect's client library (androidx.health.connect:connect-client)
+        // requires API 26+; overrides Flutter's default minSdk.
+        minSdk = 26
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
