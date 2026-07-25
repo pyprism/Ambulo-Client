@@ -33,6 +33,13 @@ jobs:
           distribution: temurin
           java-version: '17'
 
+      # Flutter invokes the Gradle wrapper for Android builds.  Persist its
+      # distribution, dependency/transformation caches, and local build cache
+      # between release runners; without this each release starts from zero.
+      - name: Setup Gradle cache (Android)
+        if: matrix.target == 'android'
+        uses: gradle/actions/setup-gradle@v6
+
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
