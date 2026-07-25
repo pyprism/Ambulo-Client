@@ -2,12 +2,12 @@ import 'package:connectivity_plus/connectivity_plus.dart' as conn_plus;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart' hide ActivityType;
-import 'package:intl/intl.dart';
 
 import '../../core/network/dio_client.dart';
 import '../../data/local/tables/location_points_table.dart';
 import '../../platform/fitness/step_tracking_service.dart';
 import '../../platform/platform_support.dart';
+import '../../shared/format/app_date_format.dart';
 import '../../shared/widgets/empty_state.dart';
 import 'diagnostics_providers.dart';
 
@@ -162,9 +162,7 @@ class _DiagnosticsScreenState extends ConsumerState<DiagnosticsScreen> {
                     label: 'Last sync',
                     value: data.lastSyncAt == null
                         ? 'Never'
-                        : DateFormat.yMMMd().add_jm().format(
-                            data.lastSyncAt!.toLocal(),
-                          ),
+                        : AppDateFormat.dateTime(data.lastSyncAt!.toLocal()),
                     isProblem: false,
                   ),
                 ],
