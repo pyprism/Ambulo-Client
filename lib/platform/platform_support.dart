@@ -5,4 +5,9 @@ import 'package:flutter/foundation.dart';
 abstract final class PlatformSupport {
   static bool get supportsSensorCollection => !kIsWeb;
   static bool get supportsBackgroundLocation => !kIsWeb;
+
+  /// Health Connect is Android-only (HealthKit/iOS is a separate, deferred
+  /// integration — see CLAUDE.md).
+  static bool get supportsHealthConnect =>
+      !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
 }
