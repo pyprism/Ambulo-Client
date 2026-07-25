@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:intl/intl.dart';
 
 import '../../data/local/database.dart';
+import '../../shared/format/app_date_format.dart';
 import '../../shared/widgets/date_granularity_filter.dart';
 import '../../shared/widgets/empty_state.dart';
 import '../../shared/widgets/trip_tile.dart';
@@ -112,7 +112,7 @@ class _TripList extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                DateFormat.yMMMEd().format(day),
+                AppDateFormat.dateWithWeekday(day),
                 style: Theme.of(context).textTheme.titleMedium,
               ),
               if (placesToday.isNotEmpty) ...[
