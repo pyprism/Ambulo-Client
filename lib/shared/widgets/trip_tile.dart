@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 
 import '../../data/local/database.dart';
+import '../format/app_date_format.dart';
 
 /// A single trip row — shared between the Timeline list and the Map's trip
 /// panel so both navigate to the same detail/edit/delete screen the same
@@ -26,8 +26,8 @@ class TripTile extends StatelessWidget {
       trip.startedAt,
     );
     final timeRange =
-        '${DateFormat.jm().format(trip.startedAt.toLocal())} – '
-        '${trip.endedAt == null ? 'ongoing' : DateFormat.jm().format(trip.endedAt!.toLocal())}';
+        '${AppDateFormat.time(trip.startedAt.toLocal())} – '
+        '${trip.endedAt == null ? 'ongoing' : AppDateFormat.time(trip.endedAt!.toLocal())}';
     final route = [
       if (startPlaceName != null) startPlaceName,
       if (endPlaceName != null) endPlaceName,
