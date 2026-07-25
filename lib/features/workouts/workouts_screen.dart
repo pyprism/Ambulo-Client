@@ -1,10 +1,10 @@
 import 'package:drift/drift.dart' show Value;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:intl/intl.dart';
 
 import '../../data/local/database.dart';
 import '../../data/local/tables/activity_samples_table.dart';
+import '../../shared/format/app_date_format.dart';
 import '../../shared/widgets/empty_state.dart';
 import 'workout_providers.dart';
 
@@ -89,9 +89,7 @@ class _WorkoutTile extends ConsumerWidget {
         color: Theme.of(context).colorScheme.primary,
       ),
       title: Text(_activityLabel(workout.activityType)),
-      subtitle: Text(
-        DateFormat.yMMMd().add_jm().format(workout.startedAt.toLocal()),
-      ),
+      subtitle: Text(AppDateFormat.dateTime(workout.startedAt.toLocal())),
       onTap: () => _showWorkoutEditor(context, ref, existing: workout),
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
@@ -171,6 +169,15 @@ class _WorkoutEditorDialogState extends ConsumerState<_WorkoutEditorDialog> {
   late final _notes = TextEditingController(text: widget.existing?.notes);
   bool _saving = false;
 
+  // Forces the time picker to 12-hour/AM-PM display regardless of the
+  // device's 24-hour clock setting, matching the app-wide date/time format.
+  static Widget _force12HourFormat(BuildContext context, Widget? child) {
+    return MediaQuery(
+      data: MediaQuery.of(context).copyWith(alwaysUse24HourFormat: false),
+      child: child!,
+    );
+  }
+
   Future<void> _pickStart() async {
     final date = await showDatePicker(
       context: context,
@@ -182,6 +189,7 @@ class _WorkoutEditorDialogState extends ConsumerState<_WorkoutEditorDialog> {
     final time = await showTimePicker(
       context: context,
       initialTime: TimeOfDay.fromDateTime(_startedAt),
+      builder: _force12HourFormat,
     );
     if (time == null) return;
     setState(() {
@@ -207,6 +215,7 @@ class _WorkoutEditorDialogState extends ConsumerState<_WorkoutEditorDialog> {
     final time = await showTimePicker(
       context: context,
       initialTime: TimeOfDay.fromDateTime(_endedAt),
+      builder: _force12HourFormat,
     );
     if (time == null) return;
     setState(
@@ -303,13 +312,13 @@ class _WorkoutEditorDialogState extends ConsumerState<_WorkoutEditorDialog> {
             OutlinedButton.icon(
               onPressed: _pickStart,
               icon: const Icon(Icons.calendar_today_outlined),
-              label: Text(DateFormat.yMMMd().add_jm().format(_startedAt)),
+              label: Text(AppDateFormat.dateTime(_startedAt)),
             ),
             const SizedBox(height: 12),
             OutlinedButton.icon(
               onPressed: _pickEnd,
               icon: const Icon(Icons.schedule_outlined),
-              label: Text(DateFormat.yMMMd().add_jm().format(_endedAt)),
+              label: Text(AppDateFormat.dateTime(_endedAt)),
             ),
             const SizedBox(height: 12),
             TextField(
