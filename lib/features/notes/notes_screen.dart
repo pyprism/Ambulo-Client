@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:intl/intl.dart';
 
 import '../../data/local/database.dart';
+import '../../shared/format/app_date_format.dart';
 import '../../shared/widgets/empty_state.dart';
 import 'notes_providers.dart';
 
@@ -58,8 +58,8 @@ class _NoteTile extends ConsumerWidget {
       title: Text(note.content, maxLines: 3, overflow: TextOverflow.ellipsis),
       subtitle: Text(
         note.context.isEmpty
-            ? DateFormat.yMMMd().format(note.noteDate)
-            : '${DateFormat.yMMMd().format(note.noteDate)} · ${note.context}',
+            ? AppDateFormat.date(note.noteDate)
+            : '${AppDateFormat.date(note.noteDate)} · ${note.context}',
       ),
       onTap: () => _showNoteEditor(context, ref, existing: note),
       trailing: PopupMenuButton<String>(
@@ -217,7 +217,7 @@ class _NoteEditorDialogState extends ConsumerState<_NoteEditorDialog> {
             OutlinedButton.icon(
               onPressed: _pickDate,
               icon: const Icon(Icons.calendar_today_outlined),
-              label: Text(DateFormat.yMMMd().format(_noteDate)),
+              label: Text(AppDateFormat.date(_noteDate)),
             ),
           ],
         ),
