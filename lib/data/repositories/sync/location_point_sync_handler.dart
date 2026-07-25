@@ -1,6 +1,6 @@
 import 'package:drift/drift.dart';
-import 'package:intl/intl.dart';
 
+import '../../../shared/format/app_date_format.dart';
 import '../../local/database.dart';
 import '../../local/sync_wire.dart';
 import '../../local/tables/location_points_table.dart';
@@ -171,9 +171,7 @@ class LocationPointSyncHandler implements SyncTypeHandler {
             id: r.id,
             title:
                 '${r.latitude.toStringAsFixed(5)}, ${r.longitude.toStringAsFixed(5)}',
-            subtitle: DateFormat.yMMMd().add_jm().format(
-              r.recordedAt.toLocal(),
-            ),
+            subtitle: AppDateFormat.dateTime(r.recordedAt.toLocal()),
           ),
         )
         .toList();
