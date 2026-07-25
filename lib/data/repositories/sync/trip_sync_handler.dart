@@ -1,6 +1,6 @@
 import 'package:drift/drift.dart';
-import 'package:intl/intl.dart';
 
+import '../../../shared/format/app_date_format.dart';
 import '../../local/database.dart';
 import '../../local/sync_wire.dart';
 import '../../local/tables/sync_columns.dart';
@@ -152,7 +152,7 @@ class TripSyncHandler implements SyncTypeHandler {
             typeName: typeName,
             id: r.id,
             title: r.name.isEmpty
-                ? 'Trip ${DateFormat.yMMMd().add_jm().format(r.startedAt.toLocal())}'
+                ? 'Trip ${AppDateFormat.dateTime(r.startedAt.toLocal())}'
                 : r.name,
             subtitle:
                 '${(r.distanceMeters / 1000).toStringAsFixed(1)} km · ${r.pointCount} pts',
