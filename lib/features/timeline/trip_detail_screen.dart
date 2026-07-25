@@ -2,10 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:intl/intl.dart';
 import 'package:latlong2/latlong.dart' as latlong;
 
 import '../../data/local/database.dart';
+import '../../shared/format/app_date_format.dart';
 import '../../shared/widgets/empty_state.dart';
 import '../places/places_providers.dart';
 import 'trip_history_provider.dart';
@@ -157,9 +157,9 @@ class _TripDetailBody extends ConsumerWidget {
                   icon: Icons.schedule,
                   label: 'Time',
                   value:
-                      '${DateFormat.yMMMEd().add_jm().format(trip.startedAt.toLocal())}'
+                      '${AppDateFormat.dateTimeWithWeekday(trip.startedAt.toLocal())}'
                       ' – '
-                      '${trip.endedAt == null ? 'ongoing' : DateFormat.jm().format(trip.endedAt!.toLocal())}',
+                      '${trip.endedAt == null ? 'ongoing' : AppDateFormat.time(trip.endedAt!.toLocal())}',
                 ),
                 _DetailRow(
                   icon: Icons.timer_outlined,
