@@ -8,7 +8,6 @@ import 'package:dio/dio.dart';
 enum ServerImportFormat {
   googleTakeout,
   googleTakeoutSemantic,
-  googleFit,
   tcx,
   ownTracksCsv,
 }
@@ -17,7 +16,6 @@ extension ServerImportFormatX on ServerImportFormat {
   String get wireValue => switch (this) {
     ServerImportFormat.googleTakeout => 'google_takeout',
     ServerImportFormat.googleTakeoutSemantic => 'google_takeout_semantic',
-    ServerImportFormat.googleFit => 'google_fit',
     ServerImportFormat.tcx => 'tcx',
     ServerImportFormat.ownTracksCsv => 'owntracks_csv',
   };
@@ -26,7 +24,6 @@ extension ServerImportFormatX on ServerImportFormat {
     ServerImportFormat.googleTakeout => 'Google Takeout (locations.json)',
     ServerImportFormat.googleTakeoutSemantic =>
       'Google Takeout (Semantic Location History)',
-    ServerImportFormat.googleFit => 'Google Fit (steps CSV)',
     ServerImportFormat.tcx => 'TCX (workout export)',
     ServerImportFormat.ownTracksCsv => 'OwnTracks CSV',
   };
