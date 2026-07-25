@@ -1,6 +1,6 @@
 import 'package:drift/drift.dart';
-import 'package:intl/intl.dart';
 
+import '../../../shared/format/app_date_format.dart';
 import '../../local/database.dart';
 import '../../local/sync_wire.dart';
 import '../../local/tables/activity_samples_table.dart';
@@ -161,7 +161,7 @@ class ActivitySampleSyncHandler implements SyncTypeHandler {
             typeName: typeName,
             id: r.id,
             title: r.activityType.name,
-            subtitle: DateFormat.yMMMd().add_jm().format(r.startedAt.toLocal()),
+            subtitle: AppDateFormat.dateTime(r.startedAt.toLocal()),
           ),
         )
         .toList();
