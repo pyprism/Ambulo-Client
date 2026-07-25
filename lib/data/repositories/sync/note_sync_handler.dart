@@ -1,6 +1,7 @@
 import 'package:drift/drift.dart';
 import 'package:intl/intl.dart';
 
+import '../../../shared/format/app_date_format.dart';
 import '../../local/database.dart';
 import '../../local/sync_wire.dart';
 import '../../local/tables/sync_columns.dart';
@@ -143,7 +144,7 @@ class NoteSyncHandler implements SyncTypeHandler {
             title: r.content.length > 40
                 ? '${r.content.substring(0, 40)}…'
                 : r.content,
-            subtitle: _dateOnly(r.noteDate),
+            subtitle: AppDateFormat.date(r.noteDate),
           ),
         )
         .toList();
