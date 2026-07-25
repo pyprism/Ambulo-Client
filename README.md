@@ -6,6 +6,24 @@ Drift/SQLite database is the source of truth, and sync with your own server
 is a manual, user triggered background reconciliation, never a blocking
 requirement.
 
+## Features
+
+- **Location tracking** — 4 monitoring modes (Quit default, Manual, Significant, Move); Move mode runs a foreground service with a visible indicator.
+- **Map** — current position + history (flutter_map/OSM), geofenced places, friends' shared locations.
+- **Trips & timeline** — automatic trip/track recording grouped by day, with place breakdown; Timeline screen filterable by day/month/year or a custom range.
+- **Fitness & dashboard** — steps, distance, floors, active minutes, calorie estimate; daily/weekly/monthly rollups; goal rings; battery-impact indicator.
+- **Charts** — steps/distance/active-minutes/calories/weight trends over week, month, or a custom date range; export as PNG or CSV.
+- **Health Connect (Android)** — direct on-device import of steps/distance/calories, no file export needed; syncs like any other local data.
+- **Workouts, notes, goals** — manually logged workouts, dated notes, per-metric daily/weekly/monthly goals.
+- **Import** — GPX, GeoJSON, Ambulo JSON, OwnTracks (JSON/.rec) parsed on-device; Google Takeout, TCX, OwnTracks CSV uploaded to the server for large-archive parsing.
+- **Export** — JSON, CSV, GPX, GeoJSON, entirely offline.
+- **Friend sharing** — friend requests, per-friend share toggle, shared locations on the map, in-app notifications.
+- **Multi-device sync** — manual "Sync now", idempotent batch upload/download, conflict detection with per-record or bulk resolution.
+- **Privacy controls** — incognito pause, local data wipe, configurable server-side retention period.
+- **Diagnostics** — sensor/permission/background/sync status, connectivity test, all in one screen.
+- **Theming** — Monokai dark, neutral light, system/light/dark switch.
+- **Local-only mode** (mobile) — use the app fully offline with no server/account at all.
+
 ## Targets
 
 - **Android + iOS (not tested)** — full sensor collection (location, steps, activity).
