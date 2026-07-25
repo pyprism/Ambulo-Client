@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:intl/intl.dart';
 
 import '../../data/local/database.dart';
+import '../../shared/format/app_date_format.dart';
 import '../../shared/widgets/empty_state.dart';
 import 'activity_history_provider.dart';
 
@@ -98,9 +98,7 @@ class _ActivityTile extends StatelessWidget {
     return ListTile(
       leading: Icon(_icon, color: Theme.of(context).colorScheme.primary),
       title: Text(_label),
-      subtitle: Text(
-        DateFormat.yMMMd().add_jm().format(segment.startedAt.toLocal()),
-      ),
+      subtitle: Text(AppDateFormat.dateTime(segment.startedAt.toLocal())),
       onTap: () => context.push('/activities/${segment.id}'),
       trailing: Column(
         mainAxisAlignment: MainAxisAlignment.center,
