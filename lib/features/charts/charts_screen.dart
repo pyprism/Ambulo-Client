@@ -10,12 +10,18 @@ import 'package:intl/intl.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../../data/repositories/fitness_stats_repository.dart';
+import '../../shared/format/app_date_format.dart';
 import '../../shared/widgets/empty_state.dart';
 import '../fitness/fitness_providers.dart';
 
 enum _ChartMetric { steps, distance, activeMinutes, calories, weight }
 
-enum _ChartPeriod { week, month }
+enum _ChartPeriod { week, month, custom }
+
+// Health Connect (and any future import) predates any real user data by a
+// wide margin — a generous lower bound for "how far back can you pick",
+// matching HealthConnectRepository's own earliest-possible-date anchor.
+final _earliestPickableDate = DateTime(2010);
 
 class ChartsScreen extends ConsumerStatefulWidget {
   const ChartsScreen({super.key});
@@ -27,8 +33,26 @@ class ChartsScreen extends ConsumerStatefulWidget {
 class _ChartsScreenState extends ConsumerState<ChartsScreen> {
   _ChartMetric _metric = _ChartMetric.steps;
   _ChartPeriod _period = _ChartPeriod.week;
+  DateTimeRange? _customRange;
   final _chartKey = GlobalKey();
   bool _exporting = false;
+
+  Future<void> _pickCustomRange() async {
+    final now = DateTime.now();
+    final picked = await showDateRangePicker(
+      context: context,
+      firstDate: _earliestPickableDate,
+      lastDate: now,
+      initialDateRange:
+          _customRange ??
+          DateTimeRange(start: now.subtract(const Duration(days: 6)), end: now),
+    );
+    if (picked == null) return;
+    setState(() {
+      _customRange = picked;
+      _period = _ChartPeriod.custom;
+    });
+  }
 
   String get _metricLabel => switch (_metric) {
     _ChartMetric.steps => 'Steps',
@@ -54,9 +78,13 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen> {
     // straight from HealthSample history rather than DailyStats, and
     // (unlike the other metrics) can have more than one reading a day.
     if (_metric == _ChartMetric.weight) {
-      final weightHistory = _period == _ChartPeriod.week
-          ? ref.watch(weeklyWeightProvider)
-          : ref.watch(monthlyWeightProvider);
+      final weightHistory = switch (_period) {
+        _ChartPeriod.week => ref.watch(weeklyWeightProvider),
+        _ChartPeriod.month => ref.watch(monthlyWeightProvider),
+        _ChartPeriod.custom => ref.watch(
+          weightHistoryForRangeProvider(_customRange!),
+        ),
+      };
       return Scaffold(
         appBar: AppBar(title: const Text('Charts')),
         body: weightHistory.when(
@@ -71,9 +99,11 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen> {
       );
     }
 
-    final stats = _period == _ChartPeriod.week
-        ? ref.watch(weeklyStatsProvider)
-        : ref.watch(monthlyStatsProvider);
+    final stats = switch (_period) {
+      _ChartPeriod.week => ref.watch(weeklyStatsProvider),
+      _ChartPeriod.month => ref.watch(monthlyStatsProvider),
+      _ChartPeriod.custom => ref.watch(statsForRangeProvider(_customRange!)),
+    };
 
     return Scaffold(
       appBar: AppBar(title: const Text('Charts')),
@@ -136,10 +166,39 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen> {
           segments: const [
             ButtonSegment(value: _ChartPeriod.week, label: Text('Week')),
             ButtonSegment(value: _ChartPeriod.month, label: Text('Month')),
+            ButtonSegment(
+              value: _ChartPeriod.custom,
+              label: Text('Custom'),
+              icon: Icon(Icons.date_range_outlined),
+            ),
           ],
           selected: {_period},
-          onSelectionChanged: (s) => setState(() => _period = s.first),
+          onSelectionChanged: (s) {
+            if (s.first == _ChartPeriod.custom) {
+              _pickCustomRange();
+            } else {
+              setState(() => _period = s.first);
+            }
+          },
         ),
+        if (_period == _ChartPeriod.custom && _customRange != null) ...[
+          const SizedBox(height: 8),
+          InkWell(
+            onTap: _pickCustomRange,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  '${AppDateFormat.date(_customRange!.start)} – '
+                  '${AppDateFormat.date(_customRange!.end)}',
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+                const SizedBox(width: 4),
+                const Icon(Icons.edit_outlined, size: 16),
+              ],
+            ),
+          ),
+        ],
         const SizedBox(height: 16),
         Card(
           child: Padding(
@@ -311,7 +370,7 @@ class _TrendChart extends StatelessWidget {
                 return Padding(
                   padding: const EdgeInsets.only(top: 8),
                   child: Text(
-                    DateFormat('M/d').format(points[index].$1),
+                    AppDateFormat.shortAxisDate(points[index].$1),
                     style: Theme.of(context).textTheme.labelSmall,
                   ),
                 );
