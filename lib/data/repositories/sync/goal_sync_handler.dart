@@ -1,6 +1,7 @@
 import 'package:drift/drift.dart';
 import 'package:intl/intl.dart';
 
+import '../../../shared/format/app_date_format.dart';
 import '../../local/database.dart';
 import '../../local/sync_wire.dart';
 import '../../local/tables/goals_table.dart';
@@ -154,7 +155,8 @@ class GoalSyncHandler implements SyncTypeHandler {
             typeName: typeName,
             id: r.id,
             title: '${r.metricType.name} goal: ${r.targetValue}',
-            subtitle: '${r.period.name} · starts ${_dateOnly(r.startDate)}',
+            subtitle:
+                '${r.period.name} · starts ${AppDateFormat.date(r.startDate)}',
           ),
         )
         .toList();
