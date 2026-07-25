@@ -1,6 +1,6 @@
 import 'package:drift/drift.dart';
-import 'package:intl/intl.dart';
 
+import '../../../shared/format/app_date_format.dart';
 import '../../local/database.dart';
 import '../../local/sync_wire.dart';
 import '../../local/tables/sync_columns.dart';
@@ -149,9 +149,7 @@ class HealthSampleSyncHandler implements SyncTypeHandler {
             typeName: typeName,
             id: r.id,
             title: '${r.metricType.name}: ${r.value}${r.unit}',
-            subtitle: DateFormat.yMMMd().add_jm().format(
-              r.recordedAt.toLocal(),
-            ),
+            subtitle: AppDateFormat.dateTime(r.recordedAt.toLocal()),
           ),
         )
         .toList();
