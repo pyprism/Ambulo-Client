@@ -19,6 +19,18 @@ class NotificationService {
   static const _moveModeNotificationId = 1001;
   static const moveModeReminderDelay = Duration(hours: 2);
 
+  // geolocator_android 5.0.3 hardcodes this exact channel ID
+  // ("geolocator_channel_01" in GeolocatorLocationService.java) and creates
+  // it with NotificationManager.IMPORTANCE_NONE — a plugin bug that makes
+  // the Move-mode foreground notification permanently invisible, since
+  // Android only lets a channel's importance be set once: after the first
+  // creation, importance changes are silently ignored (raising it back up
+  // requires either the user manually fixing it in system settings, or the
+  // channel not existing yet). There's no public API from geolocator to
+  // configure this, so the ID is duplicated here deliberately.
+  static const _geolocatorChannelId = 'geolocator_channel_01';
+  static const geolocatorChannelName = 'Location tracking';
+
   final _plugin = FlutterLocalNotificationsPlugin();
   bool _initialized = false;
 
@@ -95,5 +107,36 @@ class NotificationService {
     // plugin before it's been initialized (e.g. every non-Move mode apply).
     if (!_initialized) return;
     await _plugin.cancel(id: _moveModeNotificationId);
+  }
+
+  /// Works around the geolocator_android IMPORTANCE_NONE bug (see
+  /// `_geolocatorChannelId` doc) by deleting and recreating its
+  /// notification channel with real importance *before* Move mode starts
+  /// its position stream — geolocator's own later attempt to (re)create the
+  /// same channel ID is then a no-op (Android ignores importance changes
+  /// on an existing channel), so the notification is visible from the very
+  /// first foreground-service start. Delete-then-recreate also self-heals
+  /// a device that already hit the bug on a previous Move-mode run, not
+  /// just fresh installs — Android's "can't raise importance" restriction
+  /// only applies to an *existing* channel, so removing it first resets
+  /// that. Android-only; a no-op on other platforms.
+  Future<void> ensureGeolocatorNotificationChannelVisible() async {
+    await _ensureInitialized();
+    final android = _plugin
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >();
+    if (android == null) return;
+    await android.deleteNotificationChannel(
+      channelId: _geolocatorChannelId,
+    );
+    await android.createNotificationChannel(
+      const AndroidNotificationChannel(
+        _geolocatorChannelId,
+        geolocatorChannelName,
+        description: 'Shown while Move mode is tracking your location.',
+        importance: Importance.low,
+      ),
+    );
   }
 }

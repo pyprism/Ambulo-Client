@@ -137,6 +137,9 @@ class LocationTrackingService {
     );
     if (status != LocationTrackingStatus.active) return status;
 
+    if (mode == MonitoringMode.move) {
+      await _safeEnsureGeolocatorNotificationChannel();
+    }
     _subscription =
         Geolocator.getPositionStream(
           locationSettings: _settingsFor(mode),
@@ -149,6 +152,20 @@ class LocationTrackingService {
       await _safeScheduleMoveReminder();
     }
     return LocationTrackingStatus.active;
+  }
+
+  // Works around a geolocator_android bug where its own foreground-service
+  // notification channel is created disabled (see
+  // NotificationService._geolocatorChannelId) — must run before the
+  // position stream starts so the fix is in place by the time geolocator
+  // tries to post to that channel. Never let this block tracking itself.
+  Future<void> _safeEnsureGeolocatorNotificationChannel() async {
+    try {
+      await NotificationService.instance
+          .ensureGeolocatorNotificationChannelVisible();
+    } catch (e, st) {
+      debugPrint('geolocator notification channel fix failed: $e\n$st');
+    }
   }
 
   // The Move-mode reminder is a courtesy, not core tracking behavior — a
@@ -252,9 +269,11 @@ class LocationTrackingService {
         accuracy: isMove ? LocationAccuracy.high : LocationAccuracy.reduced,
         distanceFilter: isMove ? 10 : 200,
         foregroundNotificationConfig: isMove
-            ? const ForegroundNotificationConfig(
+            ? ForegroundNotificationConfig(
                 notificationTitle: 'Ambulo — Move mode',
                 notificationText: 'Tracking your location in the background',
+                notificationChannelName:
+                    NotificationService.geolocatorChannelName,
                 enableWakeLock: true,
               )
             : null,
