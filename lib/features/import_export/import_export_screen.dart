@@ -9,6 +9,8 @@ import 'package:share_plus/share_plus.dart';
 import '../../data/repositories/export_repository.dart';
 import '../../data/repositories/import_repository.dart';
 import '../../data/repositories/server_import_repository.dart';
+import '../../platform/fitness/health_connect_adapter.dart';
+import '../../platform/platform_support.dart';
 import '../auth/auth_controller.dart';
 import 'import_export_providers.dart';
 
@@ -26,6 +28,8 @@ class _ImportExportScreenState extends ConsumerState<ImportExportScreen> {
   ServerImportFormat _archiveFormat = ServerImportFormat.googleTakeout;
   ImportJobStatus? _archiveJob;
   bool _archiveBusy = false;
+
+  bool _healthConnectBusy = false;
 
   @override
   Widget build(BuildContext context) {
@@ -97,6 +101,40 @@ class _ImportExportScreenState extends ConsumerState<ImportExportScreen> {
               ),
             ),
           ),
+          if (PlatformSupport.supportsHealthConnect) ...[
+            const SizedBox(height: 24),
+            _SectionHeader('Connect Health Connect'),
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Pulls your step, distance, and calorie history '
+                      'directly from Health Connect (Google Fit\'s data '
+                      'source) — no file to export, nothing leaves this '
+                      'device until you hit Sync.',
+                    ),
+                    const SizedBox(height: 16),
+                    FilledButton.icon(
+                      onPressed: _healthConnectBusy
+                          ? null
+                          : _connectHealthConnect,
+                      icon: _healthConnectBusy
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.favorite_outline),
+                      label: const Text('Connect Health Connect'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
           if (authUser != null) ...[
             const SizedBox(height: 24),
             _SectionHeader('Import a large archive'),
@@ -107,9 +145,9 @@ class _ImportExportScreenState extends ConsumerState<ImportExportScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const Text(
-                      'Google Takeout, Google Fit, or TCX archives are too '
-                      'large to parse on-device — this uploads the file to '
-                      'your server, which parses it in the background.',
+                      'Google Takeout or TCX archives are too large to '
+                      'parse on-device — this uploads the file to your '
+                      'server, which parses it in the background.',
                     ),
                     const SizedBox(height: 16),
                     DropdownButtonFormField<ServerImportFormat>(
@@ -175,13 +213,19 @@ class _ImportExportScreenState extends ConsumerState<ImportExportScreen> {
   }
 
   Future<void> _pickAndPreviewFile() async {
-    final result = await FilePicker.pickFiles();
-    final file = result?.files.single;
-    if (file == null) return;
-
     setState(() => _importing = true);
     ImportPreview preview;
     try {
+      // pickFile() forces withData:false, which on web relies on a lazy
+      // blob-fetch that's broken in file_picker 12.0.0-beta.7 (throws
+      // "file data is not available"). pickFiles(allowMultiple: false)
+      // still eagerly loads bytes on web and works.
+      // ignore: deprecated_member_use
+      final result = await FilePicker.pickFiles(allowMultiple: false);
+      final file = result?.files.isNotEmpty == true
+          ? result!.files.first
+          : null;
+      if (file == null) return;
       final bytes = await file.readAsBytes();
       final content = utf8.decode(bytes, allowMalformed: true);
       preview = await ref
@@ -226,15 +270,19 @@ class _ImportExportScreenState extends ConsumerState<ImportExportScreen> {
   }
 
   Future<void> _pickAndUploadArchive() async {
-    final result = await FilePicker.pickFiles();
-    final file = result?.files.single;
-    if (file == null) return;
-
     setState(() {
       _archiveBusy = true;
       _archiveJob = null;
     });
     try {
+      // Same file_picker 12.0.0-beta.7 web bug as _pickAndPreviewFile above:
+      // pickFile()'s withData:false lazy-load path is broken on web.
+      // ignore: deprecated_member_use
+      final result = await FilePicker.pickFiles(allowMultiple: false);
+      final file = result?.files.isNotEmpty == true
+          ? result!.files.first
+          : null;
+      if (file == null) return;
       final bytes = await file.readAsBytes();
       final job = await ref
           .read(serverImportRepositoryProvider)
@@ -248,6 +296,57 @@ class _ImportExportScreenState extends ConsumerState<ImportExportScreen> {
       }
     } finally {
       if (mounted) setState(() => _archiveBusy = false);
+    }
+  }
+
+  Future<void> _connectHealthConnect() async {
+    setState(() => _healthConnectBusy = true);
+    try {
+      final summary = await ref
+          .read(healthConnectRepositoryProvider)
+          .connectAndImportAll();
+      if (!mounted) return;
+      if (summary == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Health Connect permission not granted.'),
+          ),
+        );
+        return;
+      }
+      final total = summary.totalImported;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            total == 0
+                ? 'No new Health Connect data to import.'
+                : 'Imported $total days of Health Connect data. '
+                      'Hit Sync now to upload it.',
+          ),
+        ),
+      );
+    } on HealthConnectUnavailableException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('$e'),
+          action: e.needsInstall
+              ? SnackBarAction(
+                  label: 'Install',
+                  onPressed: () => ref
+                      .read(healthConnectRepositoryProvider)
+                      .promptInstallHealthConnect(),
+                )
+              : null,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Health Connect import failed: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _healthConnectBusy = false);
     }
   }
 
