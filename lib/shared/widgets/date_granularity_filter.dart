@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
+import '../format/app_date_format.dart';
+
 enum _Granularity { all, day, month, year }
 
 /// Day/Month/Year filter control — shared by Timeline and Map. Fully
@@ -45,7 +47,7 @@ class _DateGranularityFilterState extends State<DateGranularityFilter> {
     if (anchor == null) return '';
     return switch (_granularity) {
       _Granularity.all => '',
-      _Granularity.day => DateFormat.yMMMd().format(anchor),
+      _Granularity.day => AppDateFormat.date(anchor),
       _Granularity.month => DateFormat.yMMM().format(anchor),
       _Granularity.year => DateFormat('yyyy').format(anchor),
     };
