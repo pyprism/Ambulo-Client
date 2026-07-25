@@ -1,6 +1,6 @@
 import 'package:drift/drift.dart';
-import 'package:intl/intl.dart';
 
+import '../../../shared/format/app_date_format.dart';
 import '../../local/database.dart';
 import '../../local/sync_wire.dart';
 import '../../local/tables/places_table.dart';
@@ -181,7 +181,7 @@ class PlaceSyncHandler implements SyncTypeHandler {
             typeName: typeName,
             id: r.id,
             title: r.name,
-            subtitle: DateFormat.yMMMd().format(r.updatedAt.toLocal()),
+            subtitle: AppDateFormat.date(r.updatedAt.toLocal()),
           ),
         )
         .toList();
