@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:intl/intl.dart';
 
 import '../../data/local/database.dart';
 import '../../data/local/tables/activity_samples_table.dart';
+import '../../shared/format/app_date_format.dart';
 import '../../shared/widgets/empty_state.dart';
 import 'activity_history_provider.dart';
 import 'fitness_providers.dart';
@@ -195,9 +195,9 @@ class _ActivityDetailBody extends StatelessWidget {
                   icon: Icons.schedule,
                   label: 'Time',
                   value:
-                      '${DateFormat.yMMMEd().add_jm().format(segment.startedAt.toLocal())}'
+                      '${AppDateFormat.dateTimeWithWeekday(segment.startedAt.toLocal())}'
                       ' – '
-                      '${segment.endedAt == null ? 'ongoing' : DateFormat.jm().format(segment.endedAt!.toLocal())}',
+                      '${segment.endedAt == null ? 'ongoing' : AppDateFormat.time(segment.endedAt!.toLocal())}',
                 ),
                 _DetailRow(
                   icon: Icons.timer_outlined,
