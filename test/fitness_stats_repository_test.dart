@@ -5,8 +5,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:ambulo/data/local/database.dart';
 import 'package:ambulo/data/local/tables/activity_samples_table.dart';
 import 'package:ambulo/data/local/tables/health_samples_table.dart';
+import 'package:ambulo/data/local/tables/location_points_table.dart';
 import 'package:ambulo/data/local/tables/sync_columns.dart';
 import 'package:ambulo/data/repositories/fitness_stats_repository.dart';
+import 'package:ambulo/features/fitness/user_profile_controller.dart';
 
 void main() {
   late AppDatabase db;
@@ -113,6 +115,82 @@ void main() {
       final stats = await repo.statsForDay(today);
       // Flat-rate formula (no profile set): steps * 0.04, not the frozen 42.
       expect(stats.calories, closeTo(1000 * 0.04, 0.01));
+    },
+  );
+
+  test('clips a midnight-spanning activity to the requested day', () async {
+    final day = DateTime(2020, 1, 15);
+    await seedActivitySegment(
+      day.subtract(const Duration(minutes: 30)),
+      day.add(const Duration(minutes: 30)),
+      600,
+    );
+
+    final stats = await repo.statsForDay(day);
+
+    expect(stats.distanceMeters, closeTo(300, 0.01));
+    expect(stats.activeMinutes, 30);
+  });
+
+  test('counts floors only from sustained, reliable climbs', () async {
+    final day = DateTime(2020, 1, 15);
+    Future<void> point(int minute, double altitude, double accuracy) => db
+        .into(db.locationPoints)
+        .insert(
+          LocationPointsCompanion.insert(
+            latitude: 51.5,
+            longitude: -0.12,
+            altitude: Value(altitude),
+            verticalAccuracy: Value(accuracy),
+            recordedAt: day.add(Duration(minutes: minute)),
+            monitoringMode: MonitoringMode.manual,
+            source: RecordSource.motion,
+          ),
+        );
+
+    await point(0, 10, 5);
+    await point(1, 12, 5);
+    await point(2, 14, 5);
+    await point(3, 30, 0); // Missing accuracy resets the climb sequence.
+    await point(4, 20, 5);
+    await point(5, 22, 5);
+    await point(6, 24, 5);
+
+    expect((await repo.statsForDay(day)).floors, 2);
+  });
+
+  test('uses profile BMR plus weight-scaled activity for past days', () async {
+    final day = DateTime(2020, 1, 15);
+    repo = FitnessStatsRepository(
+      db,
+      UserProfile(dateOfBirth: DateTime(1990, 1, 1), sex: BiologicalSex.male),
+    );
+    await seedHealthSample(HealthMetricType.weight, 80, day);
+    await seedHealthSample(HealthMetricType.height, 180, day);
+    await seedHealthSample(HealthMetricType.steps, 1000, day);
+
+    final stats = await repo.statsForDay(day);
+    final age = UserProfile(dateOfBirth: DateTime(1990, 1, 1)).age!;
+    final expectedBmr = 10 * 80 + 6.25 * 180 - 5 * age + 5;
+    // Historic days have a full-day BMR fraction, and 1,000 steps add 40 kcal.
+    expect(stats.calories, closeTo(expectedBmr + 40, 0.01));
+  });
+
+  test(
+    'returns inclusive day rollups and chronologically sorted weight history',
+    () async {
+      final first = DateTime(2020, 1, 15);
+      final second = first.add(const Duration(days: 1));
+      await seedHealthSample(HealthMetricType.steps, 100, first);
+      await seedHealthSample(HealthMetricType.steps, 200, second);
+      await seedHealthSample(HealthMetricType.weight, 72, second);
+      await seedHealthSample(HealthMetricType.weight, 71, first);
+
+      final stats = await repo.statsForRange(first, second);
+      final weights = await repo.weightHistory(first, second);
+
+      expect(stats.map((day) => day.steps), [100, 200]);
+      expect(weights, [(first, 71.0), (second, 72.0)]);
     },
   );
 }
