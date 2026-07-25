@@ -94,27 +94,40 @@ class FitnessStatsRepository {
 
   DateTime _startOfDay(DateTime d) => DateTime(d.year, d.month, d.day);
 
+  /// Sums every `HealthSamples` row of [metric] recorded within
+  /// `[start, end)`. Multi-device by default: a second device (or an
+  /// import) can write its own row for the same day, so this sums across
+  /// every row for the day rather than assuming exactly one exists.
+  /// Cross-device double-counting policy (e.g. phone + watch on the same
+  /// walk) is a separate, deferred decision.
+  Future<double> _healthSamplesSum(
+    HealthMetricType metric,
+    DateTime start,
+    DateTime end,
+  ) async {
+    final valueSum = _db.healthSamples.value.sum();
+    final query = _db.selectOnly(_db.healthSamples)
+      ..addColumns([valueSum])
+      ..where(
+        _db.healthSamples.metricType.equalsValue(metric) &
+            _db.healthSamples.recordedAt.isBiggerOrEqualValue(start) &
+            _db.healthSamples.recordedAt.isSmallerThanValue(end) &
+            _db.healthSamples.deletedAt.isNull(),
+      );
+    final row = await query.getSingle();
+    return row.read(valueSum) ?? 0;
+  }
+
   Future<DailyStats> statsForDay(DateTime day) async {
     final start = _startOfDay(day);
     final end = start.add(const Duration(days: 1));
     final now = DateTime.now();
 
-    // Multi-device by default: a second device (or an import) can write its
-    // own steps row for the same day, so this sums across every row for the
-    // day rather than assuming exactly one exists (which throws on 2+ rows
-    // with getSingleOrNull()). Cross-device double-counting policy (e.g.
-    // phone + watch on the same walk) is a separate, deferred decision.
-    final stepsSum = _db.healthSamples.value.sum();
-    final stepsQuery = _db.selectOnly(_db.healthSamples)
-      ..addColumns([stepsSum])
-      ..where(
-        _db.healthSamples.metricType.equalsValue(HealthMetricType.steps) &
-            _db.healthSamples.recordedAt.isBiggerOrEqualValue(start) &
-            _db.healthSamples.recordedAt.isSmallerThanValue(end) &
-            _db.healthSamples.deletedAt.isNull(),
-      );
-    final stepsRow = await stepsQuery.getSingle();
-    final steps = (stepsRow.read(stepsSum) ?? 0).round();
+    final steps = (await _healthSamplesSum(
+      HealthMetricType.steps,
+      start,
+      end,
+    )).round();
 
     final segments =
         await (_db.select(_db.activitySamples)..where(
@@ -176,6 +189,17 @@ class FitnessStatsRepository {
     }
     final activeMinutes = (activeSeconds / 60).round();
 
+    // GPS/workout-derived distance wins when it exists (finer-grained and
+    // covers today); Health-Connect-imported distance only fills days with
+    // no local distance signal at all (pre-install history, no segments).
+    if (distanceMeters == 0) {
+      distanceMeters = await _healthSamplesSum(
+        HealthMetricType.distance,
+        start,
+        end,
+      );
+    }
+
     final locationPoints =
         await (_db.select(_db.locationPoints)
               ..where(
@@ -233,7 +257,21 @@ class FitnessStatsRepository {
     final heightCm = await latestSampleValue(HealthMetricType.height);
     final bmr = _bmrPerDay(weightKg, heightCm);
     final double calories;
-    if (bmr != null) {
+    // A day with no real local activity signal (no steps, no active
+    // minutes, no workout) is a pre-install/no-sensor-coverage day, not a
+    // genuinely zero-activity one — prefer a real Health-Connect total
+    // over guessing "did nothing" from bare resting rate. Any local signal
+    // at all (including today's steps as they arrive live) keeps the
+    // estimate authoritative instead of freezing on a stale Health-Connect
+    // snapshot from whenever "Connect" was last run.
+    final hasLocalActivitySignal =
+        steps > 0 || activeMinutes > 0 || workoutCalories > 0;
+    final healthCalories = hasLocalActivitySignal
+        ? 0.0
+        : await _healthSamplesSum(HealthMetricType.calories, start, end);
+    if (healthCalories > 0) {
+      calories = healthCalories;
+    } else if (bmr != null) {
       final weightScale = weightKg! / _referenceWeightKg;
       final effectiveEnd = now.isBefore(end) ? now : end;
       final elapsedSeconds = effectiveEnd.isAfter(start)
