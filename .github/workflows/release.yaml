@@ -1,16 +1,21 @@
 name: Release
 
-# Builds binaries for every platform and attaches them to the GitHub Release
-# that triggered the run (publish a release to kick this off).
+# Two ways in:
+#   - publish a GitHub Release  -> artifacts are attached to that release
+#   - run manually (Actions tab) -> artifacts are uploaded to the run itself
+# Both paths build and sign identically; only the destination differs, so a
+# dispatch run is a safe way to exercise signing without publishing anything.
+# See docs/RELEASE_SIGNING.md.
 on:
   release:
     types: [published]
+  workflow_dispatch:
 
 permissions:
   contents: write
 
 env:
-  FLUTTER_VERSION: '3.44.6'
+  FLUTTER_VERSION: '3.44.8'
 
 jobs:
   build:
@@ -49,16 +54,51 @@ jobs:
 
       - run: flutter pub get
 
+      # Ambulo is self-signed and sideloaded (no Play Store, no upload key), so
+      # this key IS the app's permanent identity.  Fail loudly rather than fall
+      # back to the debug key: an unsigned or debug-signed release cannot be
+      # upgraded over by a properly signed one.
+      - name: Restore Android signing key
+        if: matrix.target == 'android'
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        shell: bash
+        run: |
+          : "${KEYSTORE_BASE64:?Missing ANDROID_KEYSTORE_BASE64}"
+          : "${STORE_PASSWORD:?Missing ANDROID_KEYSTORE_PASSWORD}"
+          : "${KEY_ALIAS:?Missing ANDROID_KEY_ALIAS}"
+          : "${KEY_PASSWORD:?Missing ANDROID_KEY_PASSWORD}"
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > android/app/release-keystore.jks
+          {
+            printf 'storeFile=release-keystore.jks\n'
+            printf 'storePassword=%s\n' "$STORE_PASSWORD"
+            printf 'keyAlias=%s\n' "$KEY_ALIAS"
+            printf 'keyPassword=%s\n' "$KEY_PASSWORD"
+          } > android/key.properties
+          chmod 600 android/app/release-keystore.jks android/key.properties
+
+      - name: Verify Android signing configuration
+        if: matrix.target == 'android'
+        run: ./gradlew verifyReleaseSigning
+        working-directory: android
+
       - name: Build & package
         shell: bash
         run: |
           mkdir -p dist
           case "${{ matrix.target }}" in
             android)
+              # Per-ABI splits keep downloads small; the universal APK is for
+              # users who don't know their device's architecture.
               flutter build apk --split-per-abi
+              flutter build apk
               cp build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk dist/ambulo-android-armeabi-v7a.apk
-              cp build/app/outputs/flutter-apk/app-arm64-v8a-release.apk dist/ambulo-android-arm64-v8a.apk
-              cp build/app/outputs/flutter-apk/app-x86_64-release.apk dist/ambulo-android-x86_64-release.apk
+              cp build/app/outputs/flutter-apk/app-arm64-v8a-release.apk   dist/ambulo-android-arm64-v8a.apk
+              cp build/app/outputs/flutter-apk/app-x86_64-release.apk      dist/ambulo-android-x86_64.apk
+              cp build/app/outputs/flutter-apk/app-release.apk             dist/ambulo-android-universal.apk
               ;;
             web)
               flutter build web --release
@@ -66,8 +106,37 @@ jobs:
               ;;
           esac
 
+      # Lets anyone confirm a downloaded file matches what this run built —
+      # the only integrity signal a self-signed project can offer besides the
+      # certificate fingerprint itself.
+      - name: Checksum artifacts
+        shell: bash
+        working-directory: dist
+        run: |
+          # Write outside the directory first: redirecting into dist/ would
+          # race the glob and checksum the (empty) sums file itself.
+          sha256sum -- * > "../SHA256SUMS-${{ matrix.target }}.txt"
+          mv "../SHA256SUMS-${{ matrix.target }}.txt" .
+          cat "SHA256SUMS-${{ matrix.target }}.txt"
+
+      # Release trigger: attach to the release that started the run.
       - name: Upload to release
+        if: github.event_name == 'release'
         uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ github.event.release.tag_name }}
           files: dist/*
+
+      # Manual trigger: no release exists to attach to, so keep the signed
+      # build on the run page instead of discarding it.
+      - name: Upload workflow artifact
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v7
+        with:
+          name: ambulo-${{ matrix.target }}
+          path: dist/*
+          retention-days: 30
+
+      - name: Remove Android signing material
+        if: always() && matrix.target == 'android'
+        run: rm -f android/key.properties android/app/release-keystore.jks
