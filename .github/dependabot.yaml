@@ -4,3 +4,16 @@ updates:
     directory: "/"
     schedule:
       interval: "daily"
+
+  # The CI and release workflows pin action versions by major tag; without this
+  # ecosystem those pins silently rot (the release workflow is the one that
+  # handles signing secrets, so it should not drift unattended).
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+
+  - package-ecosystem: "gradle"
+    directory: "/android"
+    schedule:
+      interval: "weekly"
