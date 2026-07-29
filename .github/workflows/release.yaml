@@ -82,7 +82,7 @@ jobs:
 
       - name: Verify Android signing configuration
         if: matrix.target == 'android'
-        run: ./android/gradlew verifyReleaseSigning
+        run: ./gradlew verifyReleaseSigning
         working-directory: android
 
       - name: Build & package
