@@ -1,7 +1,19 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
+}
+
+// `android/key.properties` is intentionally ignored by Git. It is created
+// locally or by the release workflow from GitHub Actions secrets.
+val keystoreProperties = Properties()
+val keystorePropertiesFile = rootProject.file("key.properties")
+val hasReleaseSigning = keystorePropertiesFile.exists()
+
+if (hasReleaseSigning) {
+    keystorePropertiesFile.inputStream().use(keystoreProperties::load)
 }
 
 android {
@@ -30,13 +42,61 @@ android {
         versionName = flutter.versionName
     }
 
-    buildTypes {
-        release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+    if (hasReleaseSigning) {
+        signingConfigs {
+            create("release") {
+                keyAlias = keystoreProperties.getProperty("keyAlias")
+                keyPassword = keystoreProperties.getProperty("keyPassword")
+                storeFile = file(keystoreProperties.getProperty("storeFile"))
+                storePassword = keystoreProperties.getProperty("storePassword")
+            }
         }
     }
+
+    buildTypes {
+        release {
+            // Without key.properties there is no signing config at all; the
+            // verifyReleaseSigning wiring below stops the build before it can
+            // emit an unsigned artifact.
+            if (hasReleaseSigning) {
+                signingConfig = signingConfigs.getByName("release")
+            }
+        }
+    }
+}
+
+tasks.register("verifyReleaseSigning") {
+    group = "verification"
+    description = "Fails unless android/key.properties configures release signing."
+    doLast {
+        check(hasReleaseSigning) {
+            "Missing android/key.properties — release build would be UNSIGNED.\n" +
+                "Unsigned release APKs keep the normal app-<abi>-release.apk name but " +
+                "Android refuses to install them.\n" +
+                "Set up signing (see docs/RELEASE_SIGNING.md), or build a debug APK " +
+                "instead: flutter build apk --debug"
+        }
+
+        val requiredProperties = listOf("storeFile", "storePassword", "keyAlias", "keyPassword")
+        val missingProperties = requiredProperties.filter { keystoreProperties.getProperty(it).isNullOrBlank() }
+        check(missingProperties.isEmpty()) {
+            "android/key.properties is missing: ${missingProperties.joinToString()}"
+        }
+
+        val keystorePath = keystoreProperties.getProperty("storeFile")
+        check(file(keystorePath).isFile) {
+            "Android keystore not found: $keystorePath"
+        }
+    }
+}
+
+// An unsigned release APK is indistinguishable from a signed one by filename
+// (both are app-<abi>-release.apk) and is useless — Android will not install
+// it. Gate every release assemble/bundle task on the signing check so the
+// failure happens up front with an actionable message rather than at install
+// time on someone's phone. Debug builds are unaffected.
+tasks.matching { it.name.matches(Regex("^(assemble|bundle).*Release$")) }.configureEach {
+    dependsOn("verifyReleaseSigning")
 }
 
 kotlin {
