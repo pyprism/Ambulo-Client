@@ -46,6 +46,39 @@ class HealthConnectRepository {
   /// used at all (wrong platform, not installed).
   Future<void> promptInstallHealthConnect() => _adapter.promptInstall();
 
+  /// Exact number of steps Health Connect has recorded in `[start, end)`, or
+  /// null when it can't answer — wrong platform, app not installed,
+  /// permission never granted, or no step samples in the window.
+  ///
+  /// Used to anchor the pedometer's day-rollover baseline. The phone's
+  /// hardware step counter is cumulative-since-boot and carries no
+  /// timestamps, so once the app has been killed across midnight it cannot
+  /// tell which side of midnight its unattributed steps fall on. Health
+  /// Connect's samples do carry timestamps, so it can — see
+  /// `StepTrackingService`.
+  ///
+  /// This never writes a `HealthSamples` row, so the "Health Connect only
+  /// backfills days before the earliest local pedometer row" rule still
+  /// holds: `FitnessStatsRepository` keeps summing exactly one source per
+  /// day. Nothing here prompts, so it's safe from a sensor callback.
+  Future<int?> stepsBetween(DateTime start, DateTime end) async {
+    try {
+      if (!await _adapter.hasStepsPermission()) return null;
+      final points = await _adapter.readAll(start: start, end: end);
+      final steps = points
+          .where((point) => point.metricType == HealthMetricType.steps)
+          .toList();
+      if (steps.isEmpty) return null;
+      return steps
+          .fold<double>(0, (total, point) => total + point.value)
+          .round();
+    } catch (_) {
+      // A rollover baseline is a best-effort refinement — never let a
+      // Health Connect failure take down step tracking itself.
+      return null;
+    }
+  }
+
   Future<HealthConnectImportSummary?> connectAndImportAll() async {
     final granted = await _adapter.requestPermissions();
     if (!granted) return null;
