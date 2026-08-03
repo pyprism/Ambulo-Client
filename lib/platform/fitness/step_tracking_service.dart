@@ -14,6 +14,57 @@ import '../platform_support.dart';
 
 const _baselineKey = 'pedometer_baseline_steps';
 const _baselineDateKey = 'pedometer_baseline_date';
+const _lastCounterKey = 'pedometer_last_counter';
+const _lastSeenAtKey = 'pedometer_last_counter_seen_at_ms';
+
+/// How long before midnight the last observed counter reading may be for
+/// [rolloverBaseline] to still credit the unattributed steps to the new day.
+///
+/// This is the fallback path only — on Android with Health Connect granted,
+/// the baseline is derived exactly and this window never applies. Here the
+/// carry-over may include steps actually walked the previous evening, so
+/// it's a trade: over-report by an evening's steps, or (as before) drop an
+/// entire morning walk to zero. Over-reporting wins, but the window still
+/// has to end somewhere, and people don't reliably open a tracking app late
+/// at night — a few hours would miss the very case this fixes.
+const _maxCarryOverGap = Duration(hours: 12);
+
+/// Health Connect is off the app's critical path here; if it stalls, fall
+/// back to the heuristic rather than wedging the pedometer's work chain.
+const _healthConnectBaselineTimeout = Duration(seconds: 10);
+
+/// Picks the baseline for a day rollover: the counter value that should map
+/// to "0 steps today".
+///
+/// The naive answer is the current reading, but the app process is normally
+/// dead across midnight, so the first callback of a new day often arrives
+/// *after* the user has already walked — `counter` then includes that walk
+/// and anchoring to it silently discards steps the hardware did count. That
+/// is why a walk taken before the day's first app launch showed up as zero.
+///
+/// Anchoring to the last counter value this device actually observed lets
+/// the unattributed delta land on today instead. Steps taken between that
+/// observation and midnight get credited to today too, so this only applies
+/// when the observation was recent enough for that error to be bounded (see
+/// [_maxCarryOverGap]); otherwise it falls back to `null` (anchor to the
+/// current reading, i.e. the old behavior).
+///
+/// Returns `null` when no usable carry-over exists — including after a
+/// reboot (`lastCounter > counter`), where the pre-reboot counter is
+/// meaningless.
+@visibleForTesting
+int? rolloverBaseline({
+  required int counter,
+  required int? lastCounter,
+  required DateTime? lastSeenAt,
+  required DateTime today,
+}) {
+  if (lastCounter == null || lastSeenAt == null) return null;
+  if (lastCounter > counter) return null;
+  final startOfToday = DateTime(today.year, today.month, today.day);
+  if (startOfToday.difference(lastSeenAt) > _maxCarryOverGap) return null;
+  return lastCounter;
+}
 
 /// Outcome of the most recent [StepTrackingService.start] attempt — lets
 /// Settings/Diagnostics explain why steps aren't counting instead of it
@@ -38,18 +89,28 @@ class StepTrackingService {
     this._db, {
     required Future<String> Function() deviceId,
     VoidCallback? onUpdate,
+    Future<int?> Function(DateTime start, DateTime end)? healthConnectSteps,
   }) : _deviceId = deviceId, // ignore: prefer_initializing_formals
-       _onUpdate = onUpdate; // ignore: prefer_initializing_formals
+       _onUpdate = onUpdate, // ignore: prefer_initializing_formals
+       // ignore: prefer_initializing_formals
+       _healthConnectSteps = healthConnectSteps;
 
   final AppDatabase _db;
   final Future<String> Function() _deviceId;
   final VoidCallback? _onUpdate;
+
+  /// Exact steps-in-range lookup used only to anchor a day-rollover
+  /// baseline; null where Health Connect isn't a thing (iOS, web, tests).
+  final Future<int?> Function(DateTime start, DateTime end)?
+  _healthConnectSteps;
   StreamSubscription<StepCount>? _subscription;
   Future<void> _work = Future<void>.value();
   StepTrackingStatus _status = StepTrackingStatus.inactive;
 
   static const _flushEveryStepsCount = 20;
   int? _pendingStepsToday;
+  int? _pendingRawCounter;
+  DateTime? _pendingRawCounterAt;
   DateTime? _pendingDay;
   int? _lastPersistedStepsToday;
   String? _lastPersistedDayKey;
@@ -119,22 +180,29 @@ class StepTrackingService {
     final isNewDay = storedDateKey != todayKey;
     final isBootReset = baseline != null && event.steps < baseline;
     if (isNewDay || isBootReset || baseline == null) {
-      // A boot reset mid-day must carry forward whatever was already
-      // recorded today rather than zeroing it out — the sensor's
-      // cumulative counter restarted, not the user's day. Folding the
-      // carry-over into the persisted baseline (rather than adding it only
-      // on this one callback) keeps every later `event.steps - baseline`
-      // correct too, not just this callback's.
-      final carryOverSteps = (isBootReset && !isNewDay)
-          ? await _todayStoredSteps(today)
-          : 0;
-      baseline = event.steps - carryOverSteps;
+      if (isBootReset && !isNewDay) {
+        // A boot reset mid-day must carry forward whatever was already
+        // recorded today rather than zeroing it out — the sensor's
+        // cumulative counter restarted, not the user's day. Folding the
+        // carry-over into the persisted baseline (rather than adding it only
+        // on this one callback) keeps every later `event.steps - baseline`
+        // correct too, not just this callback's.
+        baseline = event.steps - await _todayStoredSteps(today);
+      } else {
+        baseline = await resolveRolloverBaseline(event.steps, today);
+      }
       await prefs.setInt(_baselineKey, baseline);
       await prefs.setString(_baselineDateKey, todayKey);
     }
 
     final stepsToday = (event.steps - baseline).clamp(0, 1 << 30);
     _pendingStepsToday = stepsToday;
+    _pendingRawCounter = event.steps;
+    // The moment this counter value was *observed*, not the moment it later
+    // gets flushed — a flush on backgrounding can land long after the last
+    // callback, and pairing an old counter with a fresh timestamp would
+    // quietly stretch [_maxCarryOverGap] past the elapsed time it bounds.
+    _pendingRawCounterAt = today;
     _pendingDay = today;
 
     final delta = _lastPersistedStepsToday == null
@@ -149,7 +217,16 @@ class StepTrackingService {
   Future<void> _flushPending() async {
     final steps = _pendingStepsToday;
     final day = _pendingDay;
+    final counter = _pendingRawCounter;
+    final counterAt = _pendingRawCounterAt;
     if (steps == null || day == null) return;
+    // Recorded even when the step total hasn't moved since the last flush:
+    // the day-rollover baseline needs to know *when* this counter value was
+    // last observed, and `flush()` runs on backgrounding precisely so that
+    // observation is as close as possible to "phone goes in the pocket".
+    if (counter != null && counterAt != null) {
+      await _rememberCounter(counter, counterAt);
+    }
     final dayKey = _dayKey(day);
     if (_lastPersistedStepsToday == steps && _lastPersistedDayKey == dayKey) {
       return;
@@ -158,6 +235,57 @@ class StepTrackingService {
     _lastPersistedStepsToday = steps;
     _lastPersistedDayKey = dayKey;
     _onUpdate?.call();
+  }
+
+  /// Baseline for a fresh day (or a first-ever run): the counter value that
+  /// maps to "0 steps today". Prefers Health Connect's timestamped answer
+  /// and falls back to the [rolloverBaseline] heuristic, then to the raw
+  /// counter (the old, walk-dropping behavior) when neither can answer.
+  @visibleForTesting
+  Future<int> resolveRolloverBaseline(int counter, DateTime today) async {
+    final startOfToday = DateTime(today.year, today.month, today.day);
+    final healthConnectSteps = _healthConnectSteps;
+    if (healthConnectSteps != null) {
+      int? steps;
+      try {
+        steps = await healthConnectSteps(
+          startOfToday,
+          today,
+        ).timeout(_healthConnectBaselineTimeout);
+      } catch (_) {
+        // Timeout, missing grant, native failure — all just mean "Health
+        // Connect can't answer", which the heuristic below handles.
+        steps = null;
+      }
+      if (steps != null && steps >= 0) {
+        // Health Connect counting *more* of today's steps than the counter
+        // has since boot can only mean the device rebooted after midnight:
+        // the counter then covers today and nothing else, so anchor at zero
+        // and accept losing the pre-reboot remainder. Going negative to
+        // recover it would permanently disable the `event.steps < baseline`
+        // boot-reset check.
+        return steps <= counter ? counter - steps : 0;
+      }
+    }
+    final prefs = await SharedPreferences.getInstance();
+    return rolloverBaseline(
+          counter: counter,
+          lastCounter: prefs.getInt(_lastCounterKey),
+          lastSeenAt: _lastSeenAt(prefs),
+          today: today,
+        ) ??
+        counter;
+  }
+
+  Future<void> _rememberCounter(int counter, DateTime observedAt) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(_lastCounterKey, counter);
+    await prefs.setInt(_lastSeenAtKey, observedAt.millisecondsSinceEpoch);
+  }
+
+  DateTime? _lastSeenAt(SharedPreferences prefs) {
+    final ms = prefs.getInt(_lastSeenAtKey);
+    return ms == null ? null : DateTime.fromMillisecondsSinceEpoch(ms);
   }
 
   String _dayKey(DateTime d) =>
@@ -177,13 +305,18 @@ class StepTrackingService {
     // so another device (or an import) may have already written its own
     // steps row for today. `.get()` + take-first tolerates any stray
     // duplicate instead of throwing, unlike `getSingleOrNull()`.
+    //
+    // Tombstones are excluded to match `FitnessStatsRepository`, which only
+    // sums live rows — updating a deleted row instead of inserting a fresh
+    // one would leave the day stuck at zero with no way to recover.
     final rows =
         await (_db.select(_db.healthSamples)..where(
               (t) =>
                   t.metricType.equalsValue(HealthMetricType.steps) &
                   t.recordedAt.isBiggerOrEqualValue(startOfDay) &
                   t.recordedAt.isSmallerThanValue(endOfDay) &
-                  t.deviceId.equals(deviceId),
+                  t.deviceId.equals(deviceId) &
+                  t.deletedAt.isNull(),
             ))
             .get();
     return rows.isEmpty ? null : rows.first;
