@@ -89,6 +89,17 @@ class HealthConnectAdapter {
 
   Future<void> promptInstall() => _health.installHealthConnect();
 
+  /// Non-prompting check for an existing steps grant. [requestPermissions]
+  /// can pop a system dialog, which callers driven by a sensor callback
+  /// (the pedometer's day-rollover baseline) must never do — they use this
+  /// to decide whether a read is worth attempting at all.
+  Future<bool> hasStepsPermission() async {
+    if (!PlatformSupport.supportsHealthConnect) return false;
+    await _health.configure();
+    if (!await _health.isHealthConnectAvailable()) return false;
+    return await _health.hasPermissions([HealthDataType.STEPS]) ?? false;
+  }
+
   /// Reads every requested data type across [start, end), chunked into
   /// [_readWindow]-sized queries (Health Connect's own per-query cap).
   Future<List<HealthConnectPoint>> readAll({
