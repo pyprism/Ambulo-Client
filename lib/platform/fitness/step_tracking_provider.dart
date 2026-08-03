@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../data/local/database_provider.dart';
 import '../../data/repositories/device_repository.dart';
 import '../../features/fitness/fitness_providers.dart';
+import '../../features/import_export/import_export_providers.dart';
 import '../../features/timeline/trip_history_provider.dart';
 import '../../features/tracking/tracking_pause_controller.dart';
 import 'step_tracking_service.dart';
@@ -31,6 +32,23 @@ final stepTrackingServiceProvider = Provider<StepTrackingService>((ref) {
     ref.watch(appDatabaseProvider),
     deviceId: () async =>
         (await ref.read(deviceRepositoryProvider).ensureLocalDevice()).id,
+    // Lets the service anchor a day-rollover baseline against Health
+    // Connect's timestamped samples instead of guessing which side of
+    // midnight the step counter's unattributed steps fall on. Read-only and
+    // non-prompting — it returns null wherever Health Connect isn't
+    // available or granted.
+    healthConnectSteps: (start, end) async {
+      // `ref.read` throws synchronously, outside the caller's timeout/catch
+      // — and the caller is a discarded stream-callback future, so an
+      // escaped error would surface as an unhandled zone error.
+      try {
+        return await ref
+            .read(healthConnectRepositoryProvider)
+            .stepsBetween(start, end);
+      } catch (_) {
+        return null;
+      }
+    },
     onUpdate: () {
       ref.invalidate(todayStatsProvider);
       ref.invalidate(weeklyStatsProvider);
