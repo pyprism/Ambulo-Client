@@ -2,7 +2,7 @@ name: ambulo
 description: "Ambulo — privacy-first, self-hostable location tracker and fitness dashboard."
 publish_to: 'none'
 
-version: 1.0.0+1
+version: 1.0.0+2
 
 environment:
   sdk: ^3.12.2
@@ -56,6 +56,7 @@ dev_dependencies:
   flutter_launcher_icons: ^0.14.4
   geolocator_platform_interface: ^4.2.8
   plugin_platform_interface: ^2.1.8
+  sqlite3: ^3.4.0
 
 # health pins device_info_plus to ^12.1.0 (win32 ^5.11.0), but file_picker
 # needs win32 ^6.3.0 — incompatible ranges. device_info_plus 13.x moved to
