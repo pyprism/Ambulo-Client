@@ -30,11 +30,13 @@ class LocationPointSyncHandler implements SyncTypeHandler {
       'horizontal_accuracy': row.horizontalAccuracy,
       'vertical_accuracy': row.verticalAccuracy,
       'speed': row.speed,
+      'speed_accuracy': row.speedAccuracy,
       'heading': row.heading,
       'recorded_at': row.recordedAt.toUtc().toIso8601String(),
       'battery_level': row.batteryLevel,
       'connectivity': row.connectivity.name,
       'monitoring_mode': row.monitoringMode.name,
+      'trip_id': row.tripId,
     };
   }
 
@@ -122,6 +124,9 @@ class LocationPointSyncHandler implements SyncTypeHandler {
               (json['vertical_accuracy'] as num?)?.toDouble(),
             ),
             speed: Value((json['speed'] as num?)?.toDouble()),
+            speedAccuracy: json.containsKey('speed_accuracy')
+                ? Value((json['speed_accuracy'] as num?)?.toDouble())
+                : const Value.absent(),
             heading: Value((json['heading'] as num?)?.toDouble()),
             recordedAt: Value(DateTime.parse(json['recorded_at'] as String)),
             batteryLevel: Value(json['battery_level'] as int?),
@@ -131,6 +136,9 @@ class LocationPointSyncHandler implements SyncTypeHandler {
             monitoringMode: Value(
               MonitoringMode.values.byName(json['monitoring_mode'] as String),
             ),
+            tripId: json.containsKey('trip_id')
+                ? Value(json['trip_id'] as String?)
+                : const Value.absent(),
           ),
         );
   }
