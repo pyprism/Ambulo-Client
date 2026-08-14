@@ -703,6 +703,17 @@ class $LocationPointsTable extends LocationPoints
     type: DriftSqlType.double,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _speedAccuracyMeta = const VerificationMeta(
+    'speedAccuracy',
+  );
+  @override
+  late final GeneratedColumn<double> speedAccuracy = GeneratedColumn<double>(
+    'speed_accuracy',
+    aliasedName,
+    true,
+    type: DriftSqlType.double,
+    requiredDuringInsert: false,
+  );
   static const VerificationMeta _headingMeta = const VerificationMeta(
     'heading',
   );
@@ -758,6 +769,15 @@ class $LocationPointsTable extends LocationPoints
       ).withConverter<MonitoringMode>(
         $LocationPointsTable.$convertermonitoringMode,
       );
+  static const VerificationMeta _tripIdMeta = const VerificationMeta('tripId');
+  @override
+  late final GeneratedColumn<String> tripId = GeneratedColumn<String>(
+    'trip_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -776,11 +796,13 @@ class $LocationPointsTable extends LocationPoints
     horizontalAccuracy,
     verticalAccuracy,
     speed,
+    speedAccuracy,
     heading,
     recordedAt,
     batteryLevel,
     connectivity,
     monitoringMode,
+    tripId,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -885,6 +907,15 @@ class $LocationPointsTable extends LocationPoints
         speed.isAcceptableOrUnknown(data['speed']!, _speedMeta),
       );
     }
+    if (data.containsKey('speed_accuracy')) {
+      context.handle(
+        _speedAccuracyMeta,
+        speedAccuracy.isAcceptableOrUnknown(
+          data['speed_accuracy']!,
+          _speedAccuracyMeta,
+        ),
+      );
+    }
     if (data.containsKey('heading')) {
       context.handle(
         _headingMeta,
@@ -906,6 +937,12 @@ class $LocationPointsTable extends LocationPoints
           data['battery_level']!,
           _batteryLevelMeta,
         ),
+      );
+    }
+    if (data.containsKey('trip_id')) {
+      context.handle(
+        _tripIdMeta,
+        tripId.isAcceptableOrUnknown(data['trip_id']!, _tripIdMeta),
       );
     }
     return context;
@@ -985,6 +1022,10 @@ class $LocationPointsTable extends LocationPoints
         DriftSqlType.double,
         data['${effectivePrefix}speed'],
       ),
+      speedAccuracy: attachedDatabase.typeMapping.read(
+        DriftSqlType.double,
+        data['${effectivePrefix}speed_accuracy'],
+      ),
       heading: attachedDatabase.typeMapping.read(
         DriftSqlType.double,
         data['${effectivePrefix}heading'],
@@ -1008,6 +1049,10 @@ class $LocationPointsTable extends LocationPoints
           DriftSqlType.string,
           data['${effectivePrefix}monitoring_mode'],
         )!,
+      ),
+      tripId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}trip_id'],
       ),
     );
   }
@@ -1048,11 +1093,13 @@ class LocationPoint extends DataClass implements Insertable<LocationPoint> {
   final double? horizontalAccuracy;
   final double? verticalAccuracy;
   final double? speed;
+  final double? speedAccuracy;
   final double? heading;
   final DateTime recordedAt;
   final int? batteryLevel;
   final Connectivity connectivity;
   final MonitoringMode monitoringMode;
+  final String? tripId;
   const LocationPoint({
     required this.id,
     this.userId,
@@ -1070,11 +1117,13 @@ class LocationPoint extends DataClass implements Insertable<LocationPoint> {
     this.horizontalAccuracy,
     this.verticalAccuracy,
     this.speed,
+    this.speedAccuracy,
     this.heading,
     required this.recordedAt,
     this.batteryLevel,
     required this.connectivity,
     required this.monitoringMode,
+    this.tripId,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -1119,6 +1168,9 @@ class LocationPoint extends DataClass implements Insertable<LocationPoint> {
     if (!nullToAbsent || speed != null) {
       map['speed'] = Variable<double>(speed);
     }
+    if (!nullToAbsent || speedAccuracy != null) {
+      map['speed_accuracy'] = Variable<double>(speedAccuracy);
+    }
     if (!nullToAbsent || heading != null) {
       map['heading'] = Variable<double>(heading);
     }
@@ -1135,6 +1187,9 @@ class LocationPoint extends DataClass implements Insertable<LocationPoint> {
       map['monitoring_mode'] = Variable<String>(
         $LocationPointsTable.$convertermonitoringMode.toSql(monitoringMode),
       );
+    }
+    if (!nullToAbsent || tripId != null) {
+      map['trip_id'] = Variable<String>(tripId);
     }
     return map;
   }
@@ -1173,6 +1228,9 @@ class LocationPoint extends DataClass implements Insertable<LocationPoint> {
       speed: speed == null && nullToAbsent
           ? const Value.absent()
           : Value(speed),
+      speedAccuracy: speedAccuracy == null && nullToAbsent
+          ? const Value.absent()
+          : Value(speedAccuracy),
       heading: heading == null && nullToAbsent
           ? const Value.absent()
           : Value(heading),
@@ -1182,6 +1240,9 @@ class LocationPoint extends DataClass implements Insertable<LocationPoint> {
           : Value(batteryLevel),
       connectivity: Value(connectivity),
       monitoringMode: Value(monitoringMode),
+      tripId: tripId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(tripId),
     );
   }
 
@@ -1213,6 +1274,7 @@ class LocationPoint extends DataClass implements Insertable<LocationPoint> {
       ),
       verticalAccuracy: serializer.fromJson<double?>(json['verticalAccuracy']),
       speed: serializer.fromJson<double?>(json['speed']),
+      speedAccuracy: serializer.fromJson<double?>(json['speedAccuracy']),
       heading: serializer.fromJson<double?>(json['heading']),
       recordedAt: serializer.fromJson<DateTime>(json['recordedAt']),
       batteryLevel: serializer.fromJson<int?>(json['batteryLevel']),
@@ -1222,6 +1284,7 @@ class LocationPoint extends DataClass implements Insertable<LocationPoint> {
       monitoringMode: $LocationPointsTable.$convertermonitoringMode.fromJson(
         serializer.fromJson<String>(json['monitoringMode']),
       ),
+      tripId: serializer.fromJson<String?>(json['tripId']),
     );
   }
   @override
@@ -1248,6 +1311,7 @@ class LocationPoint extends DataClass implements Insertable<LocationPoint> {
       'horizontalAccuracy': serializer.toJson<double?>(horizontalAccuracy),
       'verticalAccuracy': serializer.toJson<double?>(verticalAccuracy),
       'speed': serializer.toJson<double?>(speed),
+      'speedAccuracy': serializer.toJson<double?>(speedAccuracy),
       'heading': serializer.toJson<double?>(heading),
       'recordedAt': serializer.toJson<DateTime>(recordedAt),
       'batteryLevel': serializer.toJson<int?>(batteryLevel),
@@ -1257,6 +1321,7 @@ class LocationPoint extends DataClass implements Insertable<LocationPoint> {
       'monitoringMode': serializer.toJson<String>(
         $LocationPointsTable.$convertermonitoringMode.toJson(monitoringMode),
       ),
+      'tripId': serializer.toJson<String?>(tripId),
     };
   }
 
@@ -1277,11 +1342,13 @@ class LocationPoint extends DataClass implements Insertable<LocationPoint> {
     Value<double?> horizontalAccuracy = const Value.absent(),
     Value<double?> verticalAccuracy = const Value.absent(),
     Value<double?> speed = const Value.absent(),
+    Value<double?> speedAccuracy = const Value.absent(),
     Value<double?> heading = const Value.absent(),
     DateTime? recordedAt,
     Value<int?> batteryLevel = const Value.absent(),
     Connectivity? connectivity,
     MonitoringMode? monitoringMode,
+    Value<String?> tripId = const Value.absent(),
   }) => LocationPoint(
     id: id ?? this.id,
     userId: userId.present ? userId.value : this.userId,
@@ -1303,11 +1370,15 @@ class LocationPoint extends DataClass implements Insertable<LocationPoint> {
         ? verticalAccuracy.value
         : this.verticalAccuracy,
     speed: speed.present ? speed.value : this.speed,
+    speedAccuracy: speedAccuracy.present
+        ? speedAccuracy.value
+        : this.speedAccuracy,
     heading: heading.present ? heading.value : this.heading,
     recordedAt: recordedAt ?? this.recordedAt,
     batteryLevel: batteryLevel.present ? batteryLevel.value : this.batteryLevel,
     connectivity: connectivity ?? this.connectivity,
     monitoringMode: monitoringMode ?? this.monitoringMode,
+    tripId: tripId.present ? tripId.value : this.tripId,
   );
   LocationPoint copyWithCompanion(LocationPointsCompanion data) {
     return LocationPoint(
@@ -1331,6 +1402,9 @@ class LocationPoint extends DataClass implements Insertable<LocationPoint> {
           ? data.verticalAccuracy.value
           : this.verticalAccuracy,
       speed: data.speed.present ? data.speed.value : this.speed,
+      speedAccuracy: data.speedAccuracy.present
+          ? data.speedAccuracy.value
+          : this.speedAccuracy,
       heading: data.heading.present ? data.heading.value : this.heading,
       recordedAt: data.recordedAt.present
           ? data.recordedAt.value
@@ -1344,6 +1418,7 @@ class LocationPoint extends DataClass implements Insertable<LocationPoint> {
       monitoringMode: data.monitoringMode.present
           ? data.monitoringMode.value
           : this.monitoringMode,
+      tripId: data.tripId.present ? data.tripId.value : this.tripId,
     );
   }
 
@@ -1366,11 +1441,13 @@ class LocationPoint extends DataClass implements Insertable<LocationPoint> {
           ..write('horizontalAccuracy: $horizontalAccuracy, ')
           ..write('verticalAccuracy: $verticalAccuracy, ')
           ..write('speed: $speed, ')
+          ..write('speedAccuracy: $speedAccuracy, ')
           ..write('heading: $heading, ')
           ..write('recordedAt: $recordedAt, ')
           ..write('batteryLevel: $batteryLevel, ')
           ..write('connectivity: $connectivity, ')
-          ..write('monitoringMode: $monitoringMode')
+          ..write('monitoringMode: $monitoringMode, ')
+          ..write('tripId: $tripId')
           ..write(')'))
         .toString();
   }
@@ -1393,11 +1470,13 @@ class LocationPoint extends DataClass implements Insertable<LocationPoint> {
     horizontalAccuracy,
     verticalAccuracy,
     speed,
+    speedAccuracy,
     heading,
     recordedAt,
     batteryLevel,
     connectivity,
     monitoringMode,
+    tripId,
   ]);
   @override
   bool operator ==(Object other) =>
@@ -1419,11 +1498,13 @@ class LocationPoint extends DataClass implements Insertable<LocationPoint> {
           other.horizontalAccuracy == this.horizontalAccuracy &&
           other.verticalAccuracy == this.verticalAccuracy &&
           other.speed == this.speed &&
+          other.speedAccuracy == this.speedAccuracy &&
           other.heading == this.heading &&
           other.recordedAt == this.recordedAt &&
           other.batteryLevel == this.batteryLevel &&
           other.connectivity == this.connectivity &&
-          other.monitoringMode == this.monitoringMode);
+          other.monitoringMode == this.monitoringMode &&
+          other.tripId == this.tripId);
 }
 
 class LocationPointsCompanion extends UpdateCompanion<LocationPoint> {
@@ -1443,11 +1524,13 @@ class LocationPointsCompanion extends UpdateCompanion<LocationPoint> {
   final Value<double?> horizontalAccuracy;
   final Value<double?> verticalAccuracy;
   final Value<double?> speed;
+  final Value<double?> speedAccuracy;
   final Value<double?> heading;
   final Value<DateTime> recordedAt;
   final Value<int?> batteryLevel;
   final Value<Connectivity> connectivity;
   final Value<MonitoringMode> monitoringMode;
+  final Value<String?> tripId;
   final Value<int> rowid;
   const LocationPointsCompanion({
     this.id = const Value.absent(),
@@ -1466,11 +1549,13 @@ class LocationPointsCompanion extends UpdateCompanion<LocationPoint> {
     this.horizontalAccuracy = const Value.absent(),
     this.verticalAccuracy = const Value.absent(),
     this.speed = const Value.absent(),
+    this.speedAccuracy = const Value.absent(),
     this.heading = const Value.absent(),
     this.recordedAt = const Value.absent(),
     this.batteryLevel = const Value.absent(),
     this.connectivity = const Value.absent(),
     this.monitoringMode = const Value.absent(),
+    this.tripId = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   LocationPointsCompanion.insert({
@@ -1490,11 +1575,13 @@ class LocationPointsCompanion extends UpdateCompanion<LocationPoint> {
     this.horizontalAccuracy = const Value.absent(),
     this.verticalAccuracy = const Value.absent(),
     this.speed = const Value.absent(),
+    this.speedAccuracy = const Value.absent(),
     this.heading = const Value.absent(),
     required DateTime recordedAt,
     this.batteryLevel = const Value.absent(),
     this.connectivity = const Value.absent(),
     required MonitoringMode monitoringMode,
+    this.tripId = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : source = Value(source),
        latitude = Value(latitude),
@@ -1518,11 +1605,13 @@ class LocationPointsCompanion extends UpdateCompanion<LocationPoint> {
     Expression<double>? horizontalAccuracy,
     Expression<double>? verticalAccuracy,
     Expression<double>? speed,
+    Expression<double>? speedAccuracy,
     Expression<double>? heading,
     Expression<DateTime>? recordedAt,
     Expression<int>? batteryLevel,
     Expression<String>? connectivity,
     Expression<String>? monitoringMode,
+    Expression<String>? tripId,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -1542,11 +1631,13 @@ class LocationPointsCompanion extends UpdateCompanion<LocationPoint> {
       if (horizontalAccuracy != null) 'horizontal_accuracy': horizontalAccuracy,
       if (verticalAccuracy != null) 'vertical_accuracy': verticalAccuracy,
       if (speed != null) 'speed': speed,
+      if (speedAccuracy != null) 'speed_accuracy': speedAccuracy,
       if (heading != null) 'heading': heading,
       if (recordedAt != null) 'recorded_at': recordedAt,
       if (batteryLevel != null) 'battery_level': batteryLevel,
       if (connectivity != null) 'connectivity': connectivity,
       if (monitoringMode != null) 'monitoring_mode': monitoringMode,
+      if (tripId != null) 'trip_id': tripId,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -1568,11 +1659,13 @@ class LocationPointsCompanion extends UpdateCompanion<LocationPoint> {
     Value<double?>? horizontalAccuracy,
     Value<double?>? verticalAccuracy,
     Value<double?>? speed,
+    Value<double?>? speedAccuracy,
     Value<double?>? heading,
     Value<DateTime>? recordedAt,
     Value<int?>? batteryLevel,
     Value<Connectivity>? connectivity,
     Value<MonitoringMode>? monitoringMode,
+    Value<String?>? tripId,
     Value<int>? rowid,
   }) {
     return LocationPointsCompanion(
@@ -1592,11 +1685,13 @@ class LocationPointsCompanion extends UpdateCompanion<LocationPoint> {
       horizontalAccuracy: horizontalAccuracy ?? this.horizontalAccuracy,
       verticalAccuracy: verticalAccuracy ?? this.verticalAccuracy,
       speed: speed ?? this.speed,
+      speedAccuracy: speedAccuracy ?? this.speedAccuracy,
       heading: heading ?? this.heading,
       recordedAt: recordedAt ?? this.recordedAt,
       batteryLevel: batteryLevel ?? this.batteryLevel,
       connectivity: connectivity ?? this.connectivity,
       monitoringMode: monitoringMode ?? this.monitoringMode,
+      tripId: tripId ?? this.tripId,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -1656,6 +1751,9 @@ class LocationPointsCompanion extends UpdateCompanion<LocationPoint> {
     if (speed.present) {
       map['speed'] = Variable<double>(speed.value);
     }
+    if (speedAccuracy.present) {
+      map['speed_accuracy'] = Variable<double>(speedAccuracy.value);
+    }
     if (heading.present) {
       map['heading'] = Variable<double>(heading.value);
     }
@@ -1676,6 +1774,9 @@ class LocationPointsCompanion extends UpdateCompanion<LocationPoint> {
           monitoringMode.value,
         ),
       );
+    }
+    if (tripId.present) {
+      map['trip_id'] = Variable<String>(tripId.value);
     }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
@@ -1702,11 +1803,13 @@ class LocationPointsCompanion extends UpdateCompanion<LocationPoint> {
           ..write('horizontalAccuracy: $horizontalAccuracy, ')
           ..write('verticalAccuracy: $verticalAccuracy, ')
           ..write('speed: $speed, ')
+          ..write('speedAccuracy: $speedAccuracy, ')
           ..write('heading: $heading, ')
           ..write('recordedAt: $recordedAt, ')
           ..write('batteryLevel: $batteryLevel, ')
           ..write('connectivity: $connectivity, ')
           ..write('monitoringMode: $monitoringMode, ')
+          ..write('tripId: $tripId, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -8531,11 +8634,13 @@ typedef $$LocationPointsTableCreateCompanionBuilder =
       Value<double?> horizontalAccuracy,
       Value<double?> verticalAccuracy,
       Value<double?> speed,
+      Value<double?> speedAccuracy,
       Value<double?> heading,
       required DateTime recordedAt,
       Value<int?> batteryLevel,
       Value<Connectivity> connectivity,
       required MonitoringMode monitoringMode,
+      Value<String?> tripId,
       Value<int> rowid,
     });
 typedef $$LocationPointsTableUpdateCompanionBuilder =
@@ -8556,11 +8661,13 @@ typedef $$LocationPointsTableUpdateCompanionBuilder =
       Value<double?> horizontalAccuracy,
       Value<double?> verticalAccuracy,
       Value<double?> speed,
+      Value<double?> speedAccuracy,
       Value<double?> heading,
       Value<DateTime> recordedAt,
       Value<int?> batteryLevel,
       Value<Connectivity> connectivity,
       Value<MonitoringMode> monitoringMode,
+      Value<String?> tripId,
       Value<int> rowid,
     });
 
@@ -8655,6 +8762,11 @@ class $$LocationPointsTableFilterComposer
     builder: (column) => ColumnFilters(column),
   );
 
+  ColumnFilters<double> get speedAccuracy => $composableBuilder(
+    column: $table.speedAccuracy,
+    builder: (column) => ColumnFilters(column),
+  );
+
   ColumnFilters<double> get heading => $composableBuilder(
     column: $table.heading,
     builder: (column) => ColumnFilters(column),
@@ -8680,6 +8792,11 @@ class $$LocationPointsTableFilterComposer
   get monitoringMode => $composableBuilder(
     column: $table.monitoringMode,
     builder: (column) => ColumnWithTypeConverterFilters(column),
+  );
+
+  ColumnFilters<String> get tripId => $composableBuilder(
+    column: $table.tripId,
+    builder: (column) => ColumnFilters(column),
   );
 }
 
@@ -8772,6 +8889,11 @@ class $$LocationPointsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<double> get speedAccuracy => $composableBuilder(
+    column: $table.speedAccuracy,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<double> get heading => $composableBuilder(
     column: $table.heading,
     builder: (column) => ColumnOrderings(column),
@@ -8794,6 +8916,11 @@ class $$LocationPointsTableOrderingComposer
 
   ColumnOrderings<String> get monitoringMode => $composableBuilder(
     column: $table.monitoringMode,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get tripId => $composableBuilder(
+    column: $table.tripId,
     builder: (column) => ColumnOrderings(column),
   );
 }
@@ -8859,6 +8986,11 @@ class $$LocationPointsTableAnnotationComposer
   GeneratedColumn<double> get speed =>
       $composableBuilder(column: $table.speed, builder: (column) => column);
 
+  GeneratedColumn<double> get speedAccuracy => $composableBuilder(
+    column: $table.speedAccuracy,
+    builder: (column) => column,
+  );
+
   GeneratedColumn<double> get heading =>
       $composableBuilder(column: $table.heading, builder: (column) => column);
 
@@ -8883,6 +9015,9 @@ class $$LocationPointsTableAnnotationComposer
         column: $table.monitoringMode,
         builder: (column) => column,
       );
+
+  GeneratedColumn<String> get tripId =>
+      $composableBuilder(column: $table.tripId, builder: (column) => column);
 }
 
 class $$LocationPointsTableTableManager
@@ -8934,11 +9069,13 @@ class $$LocationPointsTableTableManager
                 Value<double?> horizontalAccuracy = const Value.absent(),
                 Value<double?> verticalAccuracy = const Value.absent(),
                 Value<double?> speed = const Value.absent(),
+                Value<double?> speedAccuracy = const Value.absent(),
                 Value<double?> heading = const Value.absent(),
                 Value<DateTime> recordedAt = const Value.absent(),
                 Value<int?> batteryLevel = const Value.absent(),
                 Value<Connectivity> connectivity = const Value.absent(),
                 Value<MonitoringMode> monitoringMode = const Value.absent(),
+                Value<String?> tripId = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => LocationPointsCompanion(
                 id: id,
@@ -8957,11 +9094,13 @@ class $$LocationPointsTableTableManager
                 horizontalAccuracy: horizontalAccuracy,
                 verticalAccuracy: verticalAccuracy,
                 speed: speed,
+                speedAccuracy: speedAccuracy,
                 heading: heading,
                 recordedAt: recordedAt,
                 batteryLevel: batteryLevel,
                 connectivity: connectivity,
                 monitoringMode: monitoringMode,
+                tripId: tripId,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -8982,11 +9121,13 @@ class $$LocationPointsTableTableManager
                 Value<double?> horizontalAccuracy = const Value.absent(),
                 Value<double?> verticalAccuracy = const Value.absent(),
                 Value<double?> speed = const Value.absent(),
+                Value<double?> speedAccuracy = const Value.absent(),
                 Value<double?> heading = const Value.absent(),
                 required DateTime recordedAt,
                 Value<int?> batteryLevel = const Value.absent(),
                 Value<Connectivity> connectivity = const Value.absent(),
                 required MonitoringMode monitoringMode,
+                Value<String?> tripId = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => LocationPointsCompanion.insert(
                 id: id,
@@ -9005,11 +9146,13 @@ class $$LocationPointsTableTableManager
                 horizontalAccuracy: horizontalAccuracy,
                 verticalAccuracy: verticalAccuracy,
                 speed: speed,
+                speedAccuracy: speedAccuracy,
                 heading: heading,
                 recordedAt: recordedAt,
                 batteryLevel: batteryLevel,
                 connectivity: connectivity,
                 monitoringMode: monitoringMode,
+                tripId: tripId,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
