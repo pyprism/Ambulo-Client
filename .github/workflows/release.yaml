@@ -43,7 +43,7 @@ jobs:
       # between release runners; without this each release starts from zero.
       - name: Setup Gradle cache (Android)
         if: matrix.target == 'android'
-        uses: gradle/actions/setup-gradle@v6
+        uses: gradle/actions/setup-gradle@v6.2.0
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
