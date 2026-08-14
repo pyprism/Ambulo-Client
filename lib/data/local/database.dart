@@ -33,7 +33,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.connection);
 
   @override
-  int get schemaVersion => 5;
+  int get schemaVersion => 6;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -60,6 +60,10 @@ class AppDatabase extends _$AppDatabase {
       }
       if (from < 5) {
         await m.addColumn(places, places.notifyFriends);
+      }
+      if (from < 6) {
+        await m.addColumn(locationPoints, locationPoints.speedAccuracy);
+        await m.addColumn(locationPoints, locationPoints.tripId);
       }
     },
   );
