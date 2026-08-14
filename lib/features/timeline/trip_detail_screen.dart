@@ -8,6 +8,7 @@ import '../../data/local/database.dart';
 import '../../shared/format/app_date_format.dart';
 import '../../shared/widgets/empty_state.dart';
 import '../places/places_providers.dart';
+import 'plausible_speed.dart';
 import 'trip_history_provider.dart';
 import 'trip_route_points_provider.dart';
 
@@ -133,10 +134,9 @@ class _TripDetailBody extends ConsumerWidget {
     final avgSpeedKmh = (trip.distanceMeters > 0 && duration.inSeconds > 0)
         ? (trip.distanceMeters / 1000) / (duration.inSeconds / 3600)
         : null;
-    final recordedSpeeds = [
-      for (final p in routePoints ?? const <LocationPoint>[])
-        if (p.speed != null) p.speed!,
-    ];
+    final recordedSpeeds = plausibleSpeedsMps(
+      routePoints ?? const <LocationPoint>[],
+    );
     final maxSpeedKmh = recordedSpeeds.isEmpty
         ? null
         : recordedSpeeds.reduce((a, b) => a > b ? a : b) * 3.6;
