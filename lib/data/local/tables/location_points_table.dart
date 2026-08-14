@@ -26,6 +26,7 @@ class LocationPoints extends Table with SyncableColumns {
   RealColumn get horizontalAccuracy => real().nullable()();
   RealColumn get verticalAccuracy => real().nullable()();
   RealColumn get speed => real().nullable()();
+  RealColumn get speedAccuracy => real().nullable()();
   RealColumn get heading => real().nullable()();
 
   DateTimeColumn get recordedAt => dateTime()();
@@ -34,4 +35,11 @@ class LocationPoints extends Table with SyncableColumns {
   TextColumn get connectivity =>
       textEnum<Connectivity>().withDefault(const Constant('unknown'))();
   TextColumn get monitoringMode => textEnum<MonitoringMode>()();
+
+  // Which trip this point belongs to, so the trip detail map/max-speed
+  // query can filter by membership instead of a time window that also
+  // catches manual fixes. Synced as a plain value (see
+  // location_point_sync_handler.dart) — no FK, matching the server: trips
+  // can be deleted independently and a stale id here is harmless.
+  TextColumn get tripId => text().nullable()();
 }
