@@ -76,6 +76,18 @@ class LocationTrackingService {
   static const _tripStationaryGap = Duration(minutes: 20);
   static const _tripStartMovementMeters = 10.0;
 
+  // Below this, "hasn't left the anchor radius yet" just means "still
+  // walking across it" — Move mode's 10 m distance filter means a
+  // walking-pace point lands inside the radius for several consecutive
+  // callbacks before finally pushing past it (worst case, at walking pace,
+  // ~50-60s to cross 50 m). Only once a point sits in the radius *longer*
+  // than that does it actually indicate the device stopped, so jitter
+  // suppression in [_checkStationaryGap] gates on this elapsed time, not on
+  // radius containment alone — otherwise it would wrongly zero out most of
+  // a continuous walk's distance every time the anchor goes stale for a
+  // few points.
+  static const _stationaryJitterGap = Duration(minutes: 2);
+
   // In-memory "current activity segment" / "current trip" state — only
   // tracked while a continuous stream is running (Significant/Move), not for
   // one-off manual fixes, which don't imply a sustained activity or trip.
@@ -192,7 +204,12 @@ class LocationTrackingService {
   void _enqueuePosition(Position position, MonitoringMode mode) {
     _positionMutations = _positionMutations.then((_) async {
       try {
-        await _store(position, mode, RecordSource.location);
+        await _store(
+          position,
+          mode,
+          RecordSource.location,
+          tripId: _currentTripId,
+        );
         final previous = _lastPosition;
         final delta = previous == null
             ? 0.0
@@ -204,8 +221,10 @@ class LocationTrackingService {
               );
         _lastPosition = position;
         await _updateActivitySegment(position, delta);
-        final closedForStationary = await _checkStationaryGap(position);
-        if (!closedForStationary) await _updateTrip(position, delta);
+        final gap = await _checkStationaryGap(position);
+        if (!gap.closedTrip && !gap.stationary) {
+          await _updateTrip(position, delta);
+        }
         await _geofences.checkTransitions(
           latitude: position.latitude,
           longitude: position.longitude,
@@ -297,8 +316,9 @@ class LocationTrackingService {
   Future<void> _store(
     Position position,
     MonitoringMode mode,
-    RecordSource source,
-  ) async {
+    RecordSource source, {
+    String? tripId,
+  }) async {
     final batteryLevel = await _safeBatteryLevel();
     final connectivity = await _connectivityKind();
 
@@ -312,12 +332,16 @@ class LocationTrackingService {
             horizontalAccuracy: Value(position.accuracy),
             verticalAccuracy: Value(position.altitudeAccuracy),
             speed: Value(position.speed >= 0 ? position.speed : null),
+            speedAccuracy: Value(
+              position.speedAccuracy > 0 ? position.speedAccuracy : null,
+            ),
             heading: Value(position.heading >= 0 ? position.heading : null),
             recordedAt: position.timestamp,
             batteryLevel: Value(batteryLevel),
             connectivity: Value(connectivity),
             monitoringMode: mode,
             source: source,
+            tripId: Value(tripId),
             syncState: const Value(SyncState.pendingUpload),
           ),
         );
@@ -428,13 +452,30 @@ class LocationTrackingService {
   /// Closes the current trip once the device has stayed within
   /// [_stationaryRadiusMeters] for [_tripStationaryGap] — splitting what
   /// would otherwise be one unbounded trip for as long as tracking stays
-  /// on. The next point starts a fresh trip via [_updateTrip].
-  Future<bool> _checkStationaryGap(Position position) async {
+  /// on. The next point starts a fresh trip via [_updateTrip]. `endedAt` is
+  /// stamped with [_lastMovementAt], not this point's timestamp, so the
+  /// stationary tail (up to [_tripStationaryGap] long) isn't counted as trip
+  /// duration. Once a trip is running and this point has sat inside the
+  /// anchor radius for at least [_stationaryJitterGap] without yet closing
+  /// the trip, `stationary` tells the caller to also skip the
+  /// distance/endedAt bump in [_updateTrip] — jitter during a genuine dwell
+  /// shouldn't advance either. That threshold — not bare radius containment
+  /// — is what distinguishes a stall from an ordinary walk: [_stationaryAnchor]
+  /// only resets once a point clears the radius, so during continuous
+  /// movement several consecutive points land inside it before the anchor
+  /// catches up; gating on elapsed time keeps those counted as real motion.
+  /// Also gated on `_currentTripId != null`: before a trip exists,
+  /// [_updateTrip]'s own delta-based movement threshold is what decides
+  /// whether a point counts, so an anchor that simply hasn't drifted past
+  /// the radius yet must not block trip creation.
+  Future<({bool closedTrip, bool stationary})> _checkStationaryGap(
+    Position position,
+  ) async {
     final anchor = _stationaryAnchor;
     if (anchor == null) {
       _stationaryAnchor = position;
       _lastMovementAt = position.timestamp;
-      return false;
+      return (closedTrip: false, stationary: false);
     }
 
     final distanceFromAnchor = haversineMeters(
@@ -446,20 +487,23 @@ class LocationTrackingService {
     if (distanceFromAnchor > _stationaryRadiusMeters) {
       _stationaryAnchor = position;
       _lastMovementAt = position.timestamp;
-      return false;
+      return (closedTrip: false, stationary: false);
     }
 
     final lastMovement = _lastMovementAt;
     if (_currentTripId != null && lastMovement != null) {
       final gap = position.timestamp.difference(lastMovement);
       if (gap >= _tripStationaryGap) {
-        await _closeCurrentTrip();
+        await _closeCurrentTrip(endedAt: lastMovement);
         _stationaryAnchor = position;
         _lastMovementAt = position.timestamp;
-        return true;
+        return (closedTrip: true, stationary: false);
+      }
+      if (gap >= _stationaryJitterGap) {
+        return (closedTrip: false, stationary: true);
       }
     }
-    return false;
+    return (closedTrip: false, stationary: false);
   }
 
   /// Starts a trip on the first point of a continuous tracking session,
@@ -508,7 +552,17 @@ class LocationTrackingService {
     );
   }
 
-  Future<void> _closeCurrentTrip() async {
+  /// `endedAt` defaults to the last recorded point's timestamp — correct for
+  /// the applyMode/dispose path, where tracking stopped mid-movement and the
+  /// last point *is* the trip's end. [_checkStationaryGap] passes
+  /// [_lastMovementAt] instead, trimming the stationary tail out of the
+  /// trip's duration. `_lastMovementAt` and trip creation use different
+  /// thresholds (50m stationary-radius vs. 10m start-movement delta), so
+  /// `_lastMovementAt` can still point at a timestamp from *before* the trip
+  /// was created (the point that created the trip can itself land inside the
+  /// still-fresh anchor's radius) — clamped to `startedAt` so `endedAt` never
+  /// precedes it and duration never goes negative.
+  Future<void> _closeCurrentTrip({DateTime? endedAt}) async {
     if (_currentTripId == null) return;
     final current = await (_db.select(
       _db.trips,
@@ -523,12 +577,18 @@ class LocationTrackingService {
             _lastPosition!.latitude,
             _lastPosition!.longitude,
           );
+    final resolvedEndedAt =
+        endedAt ?? _lastPosition?.timestamp ?? DateTime.now();
     final bump = SyncBump(current.localRev);
     await (_db.update(
       _db.trips,
     )..where((t) => t.id.equals(_currentTripId!))).write(
       TripsCompanion(
-        endedAt: Value(_lastPosition?.timestamp ?? DateTime.now()),
+        endedAt: Value(
+          resolvedEndedAt.isBefore(current.startedAt)
+              ? current.startedAt
+              : resolvedEndedAt,
+        ),
         endPlaceId: Value(endPlace?.id),
         updatedAt: bump.updatedAt,
         localRev: bump.localRev,
@@ -559,6 +619,9 @@ class LocationTrackingService {
     return closest;
   }
 
+  // Segments have the same stationary-tail issue as trips ([_closeCurrentTrip])
+  // but no speed UI depends on segment duration — not worth wiring the
+  // stationary-gap plumbing through here too. Revisit if that changes.
   Future<void> _closeCurrentSegment() async {
     if (_currentSegmentId == null) return;
     final current = await (_db.select(
