@@ -211,12 +211,15 @@ void main() {
 
     final trips = await db.select(db.trips).get();
     expect(trips.length, 1);
-    // The point that *creates* the trip (p2, delta from p1) doesn't add
-    // its own delta — pre-existing trip-creation behavior, unrelated to
-    // this fix. Only p3's extension delta counts.
+    // The trip is created on p1 (delta from p0 crosses the start-movement
+    // threshold) — creation itself doesn't add a delta, but back-tags both
+    // p0 and p1 (the untagged backlog at that point), so pointCount starts
+    // at 2. p2 then extends the trip normally, adding its delta from p1 and
+    // bumping pointCount to 3. The two jitter points after that are
+    // stationary and don't touch distance/pointCount/endedAt.
     final expectedDistance = haversineMeters(52.0006, 13.0, 52.0012, 13.0);
     expect(trips.single.distanceMeters, closeTo(expectedDistance, 0.01));
-    expect(trips.single.pointCount, 2);
+    expect(trips.single.pointCount, 3);
     expect(trips.single.endedAt, lastMoveAt);
 
     await service.dispose();
@@ -295,9 +298,16 @@ void main() {
         db.locationPoints,
       )..orderBy([(t) => OrderingTerm.asc(t.recordedAt)])).get();
       // The point that establishes the trip is recorded before _updateTrip
-      // creates the row, so it's untagged; every point after carries the id.
-      expect(locationPoints.first.tripId, isNot(tripId));
-      expect(locationPoints.last.tripId, tripId);
+      // creates the row, so it's stored untagged at first — but back-tagged
+      // with the new trip's id the moment the trip is created, along with
+      // any earlier points of the same session that were also still
+      // untagged. Every point ends up carrying the trip id.
+      for (final point in locationPoints) {
+        expect(point.tripId, tripId);
+      }
+      // pointCount must reflect the back-tagged points too, not just the
+      // placeholder `1` set at trip-creation time.
+      expect(trips.single.pointCount, locationPoints.length);
 
       await service.recordManualPoint();
       final manualPoint = (await (db.select(
@@ -308,4 +318,77 @@ void main() {
       await service.dispose();
     },
   );
+
+  test('a long idle dwell between two trips is not back-tagged into the '
+      'second trip', () async {
+    final movementEnd = _sec(DateTime.now().subtract(const Duration(hours: 3)));
+    const dwellLat = 52.0012;
+    final points = [
+      // Creates and extends Trip A (~66m steps, past the 50m stationary
+      // radius each time).
+      _p(52.0000, 13.0, movementEnd.subtract(const Duration(seconds: 20))),
+      _p(52.0006, 13.0, movementEnd.subtract(const Duration(seconds: 10))),
+      _p(dwellLat, 13.0, movementEnd),
+      // Closes Trip A: stationary at the same spot for >= 20 min.
+      _p(
+        dwellLat,
+        13.0,
+        movementEnd.add(const Duration(minutes: 21)),
+        speed: 0.1,
+      ),
+      // Keeps idling at the same spot, well past the point where Trip A
+      // already closed — this is the gap a device left alone for hours
+      // between trips would produce.
+      _p(
+        dwellLat,
+        13.0,
+        movementEnd.add(const Duration(minutes: 25)),
+        speed: 0.1,
+      ),
+      _p(
+        dwellLat,
+        13.0,
+        movementEnd.add(const Duration(minutes: 30)),
+        speed: 0.1,
+      ),
+      // Finally leaves, more than _tripStationaryGap (20 min) after the
+      // last idle point above — far enough to also cross the trip-start
+      // movement threshold in one step, creating Trip B immediately.
+      _p(52.0080, 13.0, movementEnd.add(const Duration(minutes: 55))),
+    ];
+    GeolocatorPlatform.instance = _MockGeolocator(points);
+    final service = LocationTrackingService(db);
+
+    await service.applyMode(MonitoringMode.move);
+    await drain();
+
+    final trips = await db.select(db.trips).get();
+    expect(trips.length, 2);
+    final tripB = trips.reduce(
+      (a, b) => a.startedAt.isAfter(b.startedAt) ? a : b,
+    );
+    expect(tripB.startedAt, points.last.timestamp);
+
+    final idlePoints =
+        await (db.select(db.locationPoints)..where(
+              (t) =>
+                  t.recordedAt.equals(points[4].timestamp) |
+                  t.recordedAt.equals(points[5].timestamp),
+            ))
+            .get();
+    expect(idlePoints, hasLength(2));
+    for (final point in idlePoints) {
+      // Neither idle point is anywhere near Trip B's route — tagging them
+      // would stretch Trip B's polyline back through half an hour of
+      // sitting still at the old trip's endpoint.
+      expect(point.tripId, isNot(tripB.id));
+    }
+
+    final leavingPoint = await (db.select(
+      db.locationPoints,
+    )..where((t) => t.recordedAt.equals(points.last.timestamp))).getSingle();
+    expect(leavingPoint.tripId, tripB.id);
+
+    await service.dispose();
+  });
 }
