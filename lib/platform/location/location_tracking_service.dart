@@ -96,6 +96,20 @@ class LocationTrackingService {
   ActivityType? _pendingSegmentType;
   DateTime? _pendingSegmentSince;
   String? _currentTripId;
+  // Points stored while _currentTripId is null (nothing to tag them with
+  // yet) — the point that pushes cumulative movement past
+  // _tripStartMovementMeters and actually creates the trip is itself one of
+  // these, since _store() runs (and the trip decision is made) before
+  // _updateTrip creates the row. Back-tagged with the new trip's id the
+  // moment it's created; cleared whenever a trip closes or tracking stops
+  // without ever creating one.
+  //
+  // Also bounded by _untaggedSince (below): nothing else clears this list
+  // while a device just sits idle with no trip open, so without that bound
+  // a multi-hour dwell between trips would accumulate here in full and get
+  // swept into whatever trip eventually starts next.
+  final List<String> _untaggedTripPointIds = [];
+  DateTime? _untaggedSince;
   Position? _stationaryAnchor;
   DateTime? _lastMovementAt;
   Position? _lastPosition;
@@ -136,6 +150,11 @@ class LocationTrackingService {
     _pendingSegmentSince = null;
     _stationaryAnchor = null;
     _lastMovementAt = null;
+    // _closeCurrentTrip() above only clears this when a trip was actually
+    // open — a session that never crossed _tripStartMovementMeters leaves
+    // points here with nothing to back-tag them once tracking stops.
+    _untaggedTripPointIds.clear();
+    _untaggedSince = null;
 
     if (!PlatformSupport.supportsSensorCollection) {
       return LocationTrackingStatus.inactive;
@@ -204,12 +223,26 @@ class LocationTrackingService {
   void _enqueuePosition(Position position, MonitoringMode mode) {
     _positionMutations = _positionMutations.then((_) async {
       try {
-        await _store(
+        final pointId = await _store(
           position,
           mode,
           RecordSource.location,
           tripId: _currentTripId,
         );
+        if (_currentTripId == null) {
+          if (_untaggedSince != null &&
+              position.timestamp.difference(_untaggedSince!) >
+                  _tripStationaryGap) {
+            // The backlog has been idle longer than a trip is even allowed
+            // to stay stationary before closing — it predates whatever
+            // movement leads into the next trip and must not be swept into
+            // it once that trip is created.
+            _untaggedTripPointIds.clear();
+            _untaggedSince = null;
+          }
+          _untaggedSince ??= position.timestamp;
+          _untaggedTripPointIds.add(pointId);
+        }
         final previous = _lastPosition;
         final delta = previous == null
             ? 0.0
@@ -313,7 +346,7 @@ class LocationTrackingService {
     );
   }
 
-  Future<void> _store(
+  Future<String> _store(
     Position position,
     MonitoringMode mode,
     RecordSource source, {
@@ -322,9 +355,9 @@ class LocationTrackingService {
     final batteryLevel = await _safeBatteryLevel();
     final connectivity = await _connectivityKind();
 
-    await _db
+    final row = await _db
         .into(_db.locationPoints)
-        .insert(
+        .insertReturning(
           LocationPointsCompanion.insert(
             latitude: position.latitude,
             longitude: position.longitude,
@@ -345,6 +378,7 @@ class LocationTrackingService {
             syncState: const Value(SyncState.pendingUpload),
           ),
         );
+    return row.id;
   }
 
   Future<int?> _safeBatteryLevel() async {
@@ -529,6 +563,12 @@ class LocationTrackingService {
             ),
           );
       _currentTripId = row.id;
+      final taggedCount = await _backTagUntaggedPoints(row.id);
+      if (taggedCount != 1) {
+        await (_db.update(_db.trips)..where((t) => t.id.equals(row.id))).write(
+          TripsCompanion(pointCount: Value(taggedCount)),
+        );
+      }
       return;
     }
 
@@ -550,6 +590,42 @@ class LocationTrackingService {
         syncState: bump.syncState,
       ),
     );
+  }
+
+  /// Assigns [tripId] to every point stored before this trip existed
+  /// (`_untaggedTripPointIds`) — the point whose movement past
+  /// `_tripStartMovementMeters` triggered creation, plus any earlier points
+  /// of the same session that hadn't yet (bounded by `_untaggedSince` — see
+  /// where it's populated in `_enqueuePosition` — so a long-idle dwell
+  /// before this trip isn't swept in too). Without this, a trip's origin
+  /// point(s) are permanently untagged and drop out of its route.
+  ///
+  /// Returns the number of points actually tagged (ids in the backlog that
+  /// still exist), so the caller can set the new trip's `pointCount`
+  /// accurately instead of leaving it at the placeholder `1` from creation.
+  Future<int> _backTagUntaggedPoints(String tripId) async {
+    var tagged = 0;
+    for (final id in _untaggedTripPointIds) {
+      final point = await (_db.select(
+        _db.locationPoints,
+      )..where((t) => t.id.equals(id))).getSingleOrNull();
+      if (point == null) continue;
+      final bump = SyncBump(point.localRev);
+      await (_db.update(
+        _db.locationPoints,
+      )..where((t) => t.id.equals(id))).write(
+        LocationPointsCompanion(
+          tripId: Value(tripId),
+          updatedAt: bump.updatedAt,
+          localRev: bump.localRev,
+          syncState: bump.syncState,
+        ),
+      );
+      tagged++;
+    }
+    _untaggedTripPointIds.clear();
+    _untaggedSince = null;
+    return tagged;
   }
 
   /// `endedAt` defaults to the last recorded point's timestamp — correct for
