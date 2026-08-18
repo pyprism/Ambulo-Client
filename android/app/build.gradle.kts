@@ -18,7 +18,9 @@ if (hasReleaseSigning) {
 
 android {
     namespace = "com.ambulo.ambulo"
-    compileSdk = flutter.compileSdkVersion
+    // flutter_secure_storage's AAR metadata requires compileSdk 37+; Flutter's
+    // own default (flutter.compileSdkVersion) still trails that.
+    compileSdk = 37
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
