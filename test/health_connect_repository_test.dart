@@ -259,4 +259,149 @@ void main() {
       expect(rows.single.value, 150);
     },
   );
+
+  group('repairInflatedImports', () {
+    test('returns null when permission is denied', () async {
+      final repo = HealthConnectRepository(
+        db,
+        _FakeHealthConnectAdapter(granted: false),
+      );
+      final summary = await repo.repairInflatedImports();
+      expect(summary, isNull);
+    });
+
+    test(
+      'overwrites an inflated source:health row with the now-deduplicated '
+      'total for that day, and leaves source:motion rows untouched',
+      () async {
+        final day = DateTime(2026, 5, 1);
+        // Seed a source:health row the same way production ever writes one
+        // (via connectAndImportAll, so it gets the same deterministic id
+        // repairInflatedImports looks up) — standing in for a row written
+        // before the raw-record-summing bug was fixed: two source streams
+        // double-counted the same walk.
+        final buggyRepo = HealthConnectRepository(
+          db,
+          _FakeHealthConnectAdapter(
+            points: [
+              HealthConnectPoint(
+                metricType: HealthMetricType.steps,
+                value: 8000,
+                recordedAt: day,
+              ),
+            ],
+          ),
+        );
+        await buggyRepo.connectAndImportAll();
+        await seedMotionSteps(day, 4000);
+
+        final repo = HealthConnectRepository(
+          db,
+          _FakeHealthConnectAdapter(
+            points: [
+              HealthConnectPoint(
+                metricType: HealthMetricType.steps,
+                value: 4000,
+                recordedAt: day,
+              ),
+            ],
+          ),
+        );
+        final summary = await repo.repairInflatedImports();
+        expect(summary, isNotNull);
+        expect(summary!.imported[HealthMetricType.steps], 1);
+
+        final rows =
+            await (db.select(db.healthSamples)..where(
+                  (t) => t.metricType.equalsValue(HealthMetricType.steps),
+                ))
+                .get();
+        expect(rows, hasLength(2));
+        final healthRow = rows.firstWhere(
+          (r) => r.source == RecordSource.health,
+        );
+        expect(healthRow.value, 4000);
+        final motionRow = rows.firstWhere(
+          (r) => r.source == RecordSource.motion,
+        );
+        // Untouched — the repair pass only re-derives source:health rows.
+        expect(motionRow.value, 4000);
+      },
+    );
+
+    test('reports unchanged, not imported, when the stored value already '
+        'matches the deduplicated total', () async {
+      final day = DateTime(2026, 5, 2);
+      final points = [
+        HealthConnectPoint(
+          metricType: HealthMetricType.distance,
+          value: 1200,
+          recordedAt: day,
+        ),
+      ];
+      final seedRepo = HealthConnectRepository(
+        db,
+        _FakeHealthConnectAdapter(points: points),
+      );
+      await seedRepo.connectAndImportAll();
+
+      final repo = HealthConnectRepository(
+        db,
+        _FakeHealthConnectAdapter(points: points),
+      );
+      final summary = await repo.repairInflatedImports();
+      expect(summary!.imported[HealthMetricType.distance], isNull);
+      expect(summary.unchanged, 1);
+    });
+
+    test(
+      'leaves a stored value untouched — does not zero it — when Health '
+      'Connect returns no data at all for that day (e.g. the >30-day '
+      'history grant was declined, or a source device was removed)',
+      () async {
+        final day = DateTime(2026, 5, 3);
+        final seedRepo = HealthConnectRepository(
+          db,
+          _FakeHealthConnectAdapter(
+            points: [
+              HealthConnectPoint(
+                metricType: HealthMetricType.calories,
+                value: 900,
+                recordedAt: day,
+              ),
+            ],
+          ),
+        );
+        await seedRepo.connectAndImportAll();
+        // Marked synced so an untouched row is distinguishable from one the
+        // repair pass silently left at its just-inserted pendingUpload
+        // state.
+        final seeded =
+            await (db.select(db.healthSamples)..where(
+                  (t) => t.metricType.equalsValue(HealthMetricType.calories),
+                ))
+                .getSingle();
+        await db
+            .update(db.healthSamples)
+            .replace(seeded.copyWith(syncState: SyncState.synced));
+
+        final repo = HealthConnectRepository(
+          db,
+          _FakeHealthConnectAdapter(points: const []),
+        );
+        final summary = await repo.repairInflatedImports();
+        expect(summary!.imported[HealthMetricType.calories], isNull);
+        expect(summary.unchanged, 1);
+
+        final row =
+            await (db.select(db.healthSamples)..where(
+                  (t) => t.metricType.equalsValue(HealthMetricType.calories),
+                ))
+                .getSingle();
+        expect(row.value, 900);
+        expect(row.syncState, SyncState.synced);
+        expect(row.localRev, seeded.localRev);
+      },
+    );
+  });
 }
