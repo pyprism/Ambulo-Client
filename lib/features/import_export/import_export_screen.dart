@@ -30,6 +30,7 @@ class _ImportExportScreenState extends ConsumerState<ImportExportScreen> {
   bool _archiveBusy = false;
 
   bool _healthConnectBusy = false;
+  bool _healthConnectRepairBusy = false;
 
   @override
   Widget build(BuildContext context) {
@@ -129,6 +130,29 @@ class _ImportExportScreenState extends ConsumerState<ImportExportScreen> {
                             )
                           : const Icon(Icons.favorite_outline),
                       label: const Text('Connect Health Connect'),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Already connected? An earlier version of this app '
+                      'could double-count steps/distance/calories on days '
+                      'covered by more than one source (phone + watch, '
+                      'etc.) — this re-derives and corrects those days '
+                      'without touching anything else.',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                    const SizedBox(height: 8),
+                    TextButton.icon(
+                      onPressed: _healthConnectRepairBusy
+                          ? null
+                          : _repairHealthConnectImports,
+                      icon: _healthConnectRepairBusy
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.build_outlined),
+                      label: const Text('Fix inflated Health Connect data'),
                     ),
                   ],
                 ),
@@ -347,6 +371,45 @@ class _ImportExportScreenState extends ConsumerState<ImportExportScreen> {
       );
     } finally {
       if (mounted) setState(() => _healthConnectBusy = false);
+    }
+  }
+
+  Future<void> _repairHealthConnectImports() async {
+    setState(() => _healthConnectRepairBusy = true);
+    try {
+      final summary = await ref
+          .read(healthConnectRepositoryProvider)
+          .repairInflatedImports();
+      if (!mounted) return;
+      if (summary == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Health Connect permission not granted.'),
+          ),
+        );
+        return;
+      }
+      final corrected = summary.totalImported;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            corrected == 0
+                ? 'No inflated Health Connect data found.'
+                : 'Corrected $corrected day(s) of Health Connect data. '
+                      'Hit Sync now to upload the fix.',
+          ),
+        ),
+      );
+    } on HealthConnectUnavailableException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Health Connect repair failed: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _healthConnectRepairBusy = false);
     }
   }
 
