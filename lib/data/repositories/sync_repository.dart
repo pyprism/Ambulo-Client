@@ -49,6 +49,20 @@ class SyncRepository {
   final List<SyncTypeHandler> _handlers;
   final Dio _dio;
 
+  // App-resume and login both fire syncNow() unawaited (auth_controller.dart),
+  // and the manual "Sync now" button can run concurrently with either. Two
+  // interleaved upload/download passes would race on the per-type cursors
+  // (both read the same cursor, apply overlapping batches, and the later
+  // save can regress the cursor written by the other run).
+  //
+  // Chain onto the tail of the previous call instead of just reusing its
+  // future: a caller whose call arrives while a sync is in flight gets its
+  // own fresh pass once the current one finishes, so data it just wrote
+  // locally (e.g. immediately after the call) is still picked up — sharing
+  // the in-flight future outright would let that pass, snapshotted before
+  // the new data existed, silently swallow the caller's request.
+  Future<void> _syncTail = Future.value();
+
   static const _downloadBatchGuard = 50;
 
   // Keeps each upload request bounded regardless of backlog size — an
@@ -141,6 +155,7 @@ class SyncRepository {
   Future<void> _downloadAll({
     bool forceOverwriteConflicts = false,
     Iterable<SyncTypeHandler>? only,
+    Set<String>? allowedConflictIds,
   }) async {
     final targets = (only ?? _handlers).toList();
     if (targets.isEmpty) return;
@@ -166,6 +181,7 @@ class SyncRepository {
           await handler.upsertDownloaded(
             record,
             forceOverwriteConflicts: forceOverwriteConflicts,
+            allowedConflictIds: allowedConflictIds,
           );
         }
         final newCursor = bucket['cursor'] as int;
@@ -182,7 +198,15 @@ class SyncRepository {
   /// Upload-then-download: uploading first means the download pass (which
   /// reads changed-since our cursor) also pulls back our own just-uploaded
   /// rows with their authoritative server_rev, reconciling in one pass.
-  Future<SyncCounts> syncNow() async {
+  Future<SyncCounts> syncNow() {
+    final result = _syncTail.then((_) => _performSync());
+    // Keep chaining off the latest call regardless of success/failure, so
+    // one failed pass doesn't leave every future call racing a dead tail.
+    _syncTail = result.then((_) {}, onError: (_) {});
+    return result;
+  }
+
+  Future<SyncCounts> _performSync() async {
     await _uploadAll();
     await _downloadAll();
     await _saveLastSyncAt(DateTime.now());
@@ -212,8 +236,18 @@ class SyncRepository {
     // The conflict download may already have advanced this type's cursor past
     // the newly accepted force-overwrite. Re-read from zero and explicitly
     // allow this resolution path to replace the former conflict row.
+    //
+    // Re-downloading from zero re-applies every row of this type, including
+    // other records still in SyncState.conflict — restrict the overwrite to
+    // just the id being resolved so "keep mine" on one record doesn't
+    // silently take-theirs on every other conflicted record of the same
+    // type.
     await _saveCursor(typeName, 0);
-    await _downloadAll(forceOverwriteConflicts: true, only: [handler]);
+    await _downloadAll(
+      forceOverwriteConflicts: true,
+      only: [handler],
+      allowedConflictIds: {id},
+    );
   }
 
   /// Resolve all outstanding conflicts for one record type by discarding
