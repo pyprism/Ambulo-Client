@@ -44,10 +44,16 @@ HealthMetricType? _metricTypeFor(HealthDataType type) => switch (type) {
   _ => null,
 };
 
-// Health Connect's own read window cap per query (unrelated to the >30-day
-// history *authorization* gate below) — chunk long backfills into windows
-// this size rather than one unbounded range query.
-const _readWindow = Duration(days: 30);
+// One calendar day per aggregate query. Health Connect's raw
+// getHealthDataFromTypes returns *every* underlying record from every
+// source app/device stream (Google Fit phone, watch, Samsung Health, …)
+// unaggregated — summing those double- and triple-counts any day covered by
+// more than one stream. Querying the aggregate API one day at a time keeps
+// each call's own cross-source dedup scoped to exactly one calendar day, so
+// a record spanning a day boundary can't get attributed (or double
+// attributed) across two of our buckets the way summing raw dateFrom-keyed
+// records could.
+const _aggregateWindow = Duration(days: 1);
 
 /// Thin wrapper around the `health` package — the only part of this feature
 /// that can't be exercised without a real Android device + Health Connect
@@ -100,22 +106,22 @@ class HealthConnectAdapter {
     return await _health.hasPermissions([HealthDataType.STEPS]) ?? false;
   }
 
-  /// Reads every requested data type across [start, end), chunked into
-  /// [_readWindow]-sized queries (Health Connect's own per-query cap).
+  /// Reads every requested data type across [start, end) as one aggregated,
+  /// deduplicated total per metric per calendar day — never raw per-source
+  /// records (see [_aggregateWindow]).
   Future<List<HealthConnectPoint>> readAll({
     required DateTime start,
     required DateTime end,
   }) async {
     final points = <HealthConnectPoint>[];
-    var windowStart = start;
-    while (windowStart.isBefore(end)) {
-      final windowEnd = windowStart.add(_readWindow).isAfter(end)
-          ? end
-          : windowStart.add(_readWindow);
-      final raw = await _health.getHealthDataFromTypes(
+    var dayStart = DateTime(start.year, start.month, start.day);
+    while (dayStart.isBefore(end)) {
+      final dayEnd = dayStart.add(_aggregateWindow);
+      final windowEnd = dayEnd.isAfter(end) ? end : dayEnd;
+      final raw = await _health.getHealthAggregateDataFromTypes(
         types: _requestedTypes,
-        startTime: windowStart,
-        endTime: windowEnd,
+        startDate: dayStart,
+        endDate: windowEnd,
       );
       for (final point in raw) {
         final metricType = _metricTypeFor(point.type);
@@ -125,12 +131,25 @@ class HealthConnectAdapter {
           HealthConnectPoint(
             metricType: metricType,
             value: value.numericValue.toDouble(),
-            recordedAt: point.dateFrom,
+            // Stamped with the query window's own day rather than trusting
+            // the aggregate point's dateFrom — the whole point of querying
+            // one day at a time is that every point returned belongs to
+            // this day, regardless of which moment inside it dateFrom
+            // happens to report.
+            recordedAt: dayStart,
           ),
         );
       }
-      windowStart = windowEnd;
+      dayStart = dayEnd;
     }
     return points;
+  }
+
+  /// Exact deduplicated step total in `[start, end)` — used to anchor the
+  /// pedometer's day-rollover baseline, where [readAll]'s day-bucketed
+  /// aggregation would be both too coarse (an arbitrary intraday `start`)
+  /// and unnecessary (only steps are needed here, not every metric type).
+  Future<int?> totalStepsBetween(DateTime start, DateTime end) {
+    return _health.getTotalStepsInInterval(start, end);
   }
 }
