@@ -57,10 +57,19 @@ abstract class SyncTypeHandler {
 
   /// Upsert one record downloaded from `/api/sync/download/`. Must leave a
   /// row currently in `conflict` state untouched unless
-  /// [forceOverwriteConflicts] is true.
+  /// [forceOverwriteConflicts] is true — and, when [allowedConflictIds] is
+  /// given, only for ids in that set (so resolving one record's conflict
+  /// can't silently overwrite every other conflicted row of the same type
+  /// pulled in by the same re-download-from-zero pass).
+  ///
+  /// Must also leave untouched any row whose local revision is already
+  /// ahead of the downloaded record's `local_rev` — that means the row was
+  /// edited locally after this download's snapshot was taken (e.g. mid-sync
+  /// pedometer writes), and applying it would silently rewind the edit.
   Future<void> upsertDownloaded(
     Map<String, dynamic> json, {
     required bool forceOverwriteConflicts,
+    Set<String>? allowedConflictIds,
   });
 
   Future<SyncTypeCounts> counts();
