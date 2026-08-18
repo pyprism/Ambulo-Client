@@ -129,7 +129,17 @@ class StepTrackingService {
     return completer.future;
   }
 
-  Future<StepTrackingStatus> start() async {
+  // Routed through _serialize like stop()/flush() — start() has an async
+  // gap (the activity-recognition permission request) between the
+  // `_subscription != null` check and the assignment, so two concurrent
+  // callers (e.g. a pause-toggle listener and the ready-gated first apply)
+  // could otherwise both pass the null check and subscribe twice, leaking
+  // the first subscription and double-processing every step event. Sharing
+  // _work with stop() also means a stop() queued mid-start can't race in
+  // and leave `_status = inactive` with a live subscription.
+  Future<StepTrackingStatus> start() => _serialize(_start);
+
+  Future<StepTrackingStatus> _start() async {
     if (!PlatformSupport.supportsSensorCollection) {
       return _status = StepTrackingStatus.inactive;
     }
@@ -189,6 +199,13 @@ class StepTrackingService {
         // correct too, not just this callback's.
         baseline = event.steps - await _todayStoredSteps(today);
       } else {
+        // The pending buffer (if any) still describes a *previous* day at
+        // this point — flush it before it's overwritten below with today's
+        // values, or its unflushed tail (< _flushEveryStepsCount steps)
+        // never reaches the DB at all.
+        if (_pendingDay != null && _dayKey(_pendingDay!) != todayKey) {
+          await _flushPending();
+        }
         baseline = await resolveRolloverBaseline(event.steps, today);
       }
       await prefs.setInt(_baselineKey, baseline);
@@ -257,15 +274,19 @@ class StepTrackingService {
         // Connect can't answer", which the heuristic below handles.
         steps = null;
       }
-      if (steps != null && steps >= 0) {
-        // Health Connect counting *more* of today's steps than the counter
-        // has since boot can only mean the device rebooted after midnight:
-        // the counter then covers today and nothing else, so anchor at zero
-        // and accept losing the pre-reboot remainder. Going negative to
-        // recover it would permanently disable the `event.steps < baseline`
-        // boot-reset check.
-        return steps <= counter ? counter - steps : 0;
+      if (steps != null && steps >= 0 && steps <= counter) {
+        return counter - steps;
       }
+      // steps > counter is implausible on its face: the since-boot counter
+      // necessarily includes every step taken today, so Health Connect
+      // cannot legitimately report more for "today alone". A genuine
+      // midnight reboot is already caught separately by the
+      // `event.steps < baseline` check in `_onStepCount` — treating this
+      // case as "must be a reboot" and anchoring at zero instead credited
+      // Health Connect's bad answer wholesale (the entire since-boot
+      // counter logged as today's steps, the inflated-count bug this guards
+      // against). Fall through to the heuristic/raw-counter path instead of
+      // trusting either extreme.
     }
     final prefs = await SharedPreferences.getInstance();
     return rolloverBaseline(
