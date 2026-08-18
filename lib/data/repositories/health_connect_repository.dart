@@ -64,14 +64,12 @@ class HealthConnectRepository {
   Future<int?> stepsBetween(DateTime start, DateTime end) async {
     try {
       if (!await _adapter.hasStepsPermission()) return null;
-      final points = await _adapter.readAll(start: start, end: end);
-      final steps = points
-          .where((point) => point.metricType == HealthMetricType.steps)
-          .toList();
-      if (steps.isEmpty) return null;
-      return steps
-          .fold<double>(0, (total, point) => total + point.value)
-          .round();
+      // The exact, already-deduplicated aggregate total — summing raw
+      // per-source records here double-counted any window covered by more
+      // than one stream (phone + watch, etc.), which could inflate this
+      // baseline anchor and, in the worst case, log an entire day's
+      // since-boot counter as today's steps.
+      return await _adapter.totalStepsBetween(start, end);
     } catch (_) {
       // A rollover baseline is a best-effort refinement — never let a
       // Health Connect failure take down step tracking itself.
@@ -106,6 +104,68 @@ class HealthConnectRepository {
       final wrote = await _upsertDay(metricType, day, entry.value);
       if (wrote) {
         imported.update(metricType, (n) => n + 1, ifAbsent: () => 1);
+      } else {
+        unchanged++;
+      }
+    }
+    return HealthConnectImportSummary(imported: imported, unchanged: unchanged);
+  }
+
+  /// One-time repair for rows written before `readAll` was switched to
+  /// Health Connect's deduplicated aggregate API — every existing
+  /// `source: health` day may have summed raw, duplicate-across-source
+  /// records and be inflated. Re-derives each such day from the now-correct
+  /// aggregate reads and overwrites it if the value changed; leaves
+  /// everything else untouched.
+  ///
+  /// `source: motion` (pedometer) rows aren't touched — Health Connect was
+  /// never their origin, so there's nothing here to re-derive them from;
+  /// past pedometer-sourced days that were themselves thrown off by an
+  /// inflated Health Connect rollover baseline can't be recovered.
+  Future<HealthConnectImportSummary?> repairInflatedImports() async {
+    final granted = await _adapter.requestPermissions();
+    if (!granted) return null;
+
+    final rows =
+        await (_db.select(_db.healthSamples)..where(
+              (t) =>
+                  t.source.equalsValue(RecordSource.health) &
+                  t.deletedAt.isNull(),
+            ))
+            .get();
+
+    final imported = <HealthMetricType, int>{};
+    var unchanged = 0;
+    final dayTotalsCache = <DateTime, Map<HealthMetricType, double>>{};
+
+    for (final row in rows) {
+      final day = _startOfDay(row.recordedAt);
+      var totals = dayTotalsCache[day];
+      if (totals == null) {
+        final points = await _adapter.readAll(
+          start: day,
+          end: day.add(const Duration(days: 1)),
+        );
+        totals = {
+          for (final entry in _aggregateByDay(points).entries)
+            entry.key.$1: entry.value,
+        };
+        dayTotalsCache[day] = totals;
+      }
+      final value = totals[row.metricType];
+      if (value == null) {
+        // No data came back for this metric/day — could be a genuine zero,
+        // but could just as easily be the >30-day history grant being
+        // declined (readAll then silently sees only Health Connect's
+        // default 30-day window) or a source device having been removed.
+        // Either way this isn't evidence the stored value is wrong, so
+        // leave it untouched rather than overwriting real history with 0.
+        unchanged++;
+        continue;
+      }
+      final wrote = await _upsertDay(row.metricType, day, value);
+      if (wrote) {
+        imported.update(row.metricType, (n) => n + 1, ifAbsent: () => 1);
       } else {
         unchanged++;
       }
