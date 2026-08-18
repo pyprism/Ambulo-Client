@@ -79,19 +79,29 @@ class HealthSampleSyncHandler implements SyncTypeHandler {
   Future<void> upsertDownloaded(
     Map<String, dynamic> json, {
     required bool forceOverwriteConflicts,
+    Set<String>? allowedConflictIds,
   }) async {
-    if (!forceOverwriteConflicts) {
-      final existing = await (_db.select(
-        _db.healthSamples,
-      )..where((t) => t.id.equals(json['id'] as String))).getSingleOrNull();
-      if (existing?.syncState == SyncState.conflict) return;
+    final id = json['id'] as String;
+    final existing = await (_db.select(
+      _db.healthSamples,
+    )..where((t) => t.id.equals(id))).getSingleOrNull();
+    final canOverwriteConflict =
+        forceOverwriteConflicts &&
+        (allowedConflictIds == null || allowedConflictIds.contains(id));
+    if (!canOverwriteConflict && existing?.syncState == SyncState.conflict) {
+      return;
+    }
+    if (existing != null &&
+        existing.localRev > (json['local_rev'] as int? ?? 0)) {
+      await _adoptServerRevOnly(id, existing, json);
+      return;
     }
 
     await _db
         .into(_db.healthSamples)
         .insertOnConflictUpdate(
           HealthSamplesCompanion(
-            id: Value(json['id'] as String),
+            id: Value(id),
             localRev: Value(json['local_rev'] as int? ?? 0),
             serverRev: Value(json['server_rev'] as int?),
             syncState: Value(syncStateFromWire(json['sync_state'] as String)),
@@ -103,6 +113,7 @@ class HealthSampleSyncHandler implements SyncTypeHandler {
                   ? null
                   : DateTime.parse(json['deleted_at'] as String),
             ),
+            deviceId: Value(json['device'] as String?),
             metricType: Value(
               healthMetricTypeFromWire(json['metric_type'] as String),
             ),
@@ -114,13 +125,29 @@ class HealthSampleSyncHandler implements SyncTypeHandler {
         );
   }
 
+  /// A row whose local edit is newer than this download's snapshot skips
+  /// the data update above — but the server_rev the server just assigned
+  /// must still land locally, or this row's cached server_rev goes stale
+  /// and the *next* upload's base_server_rev mismatches the server's real
+  /// value, misreporting a conflict against nobody but this client's own
+  /// prior sync.
+  Future<void> _adoptServerRevOnly(
+    String id,
+    HealthSample existing,
+    Map<String, dynamic> json,
+  ) async {
+    final serverRev = json['server_rev'] as int?;
+    if (serverRev == null || serverRev == existing.serverRev) return;
+    await (_db.update(_db.healthSamples)..where((t) => t.id.equals(id))).write(
+      HealthSamplesCompanion(serverRev: Value(serverRev)),
+    );
+  }
+
   @override
   Future<SyncTypeCounts> counts() async {
     final t = _db.healthSamples;
     final pendingCount = countAll(
-      filter:
-          t.syncState.equalsValue(SyncState.pendingUpload) |
-          t.syncState.equalsValue(SyncState.localOnly),
+      filter: t.syncState.equalsValue(SyncState.pendingUpload),
     );
     final failedCount = countAll(
       filter: t.syncState.equalsValue(SyncState.failed),
