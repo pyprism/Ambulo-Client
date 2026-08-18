@@ -121,15 +121,44 @@ void main() {
       );
     });
 
-    test('anchors at zero when Health Connect implies a reboot today', () {
-      // More steps today than the counter has since boot ⇒ boot happened
-      // after midnight ⇒ everything the counter holds belongs to today.
+    test('falls back to the raw counter (0 steps today) when Health Connect '
+        'implausibly reports more steps than the counter has since boot, '
+        'instead of crediting it the whole counter', () {
+      // The since-boot counter necessarily includes every step taken
+      // today, so Health Connect can't legitimately claim more for "today
+      // alone" — trusting it here (anchoring at zero, i.e. crediting the
+      // entire counter to today) is exactly the inflated-step-count bug.
+      // With nothing in prefs for the heuristic to carry forward either,
+      // this falls all the way back to the raw counter: 0 steps today,
+      // not the counter's full 3000.
       final service = serviceWith(() async => 5000);
       expect(
         service.resolveRolloverBaseline(3000, DateTime(2026, 8, 2, 9)),
-        completion(0),
+        completion(3000),
       );
     });
+
+    test(
+      'falls back to the heuristic (not zero) when Health Connect '
+      'implausibly exceeds the counter but a recent sighting is available',
+      () {
+        SharedPreferences.setMockInitialValues({
+          'pedometer_last_counter': 2000,
+          'pedometer_last_counter_seen_at_ms': DateTime(
+            2026,
+            8,
+            1,
+            22,
+            30,
+          ).millisecondsSinceEpoch,
+        });
+        final service = serviceWith(() async => 5000);
+        expect(
+          service.resolveRolloverBaseline(3000, DateTime(2026, 8, 2, 9)),
+          completion(2000),
+        );
+      },
+    );
 
     test('falls back to the heuristic when Health Connect cannot answer', () {
       SharedPreferences.setMockInitialValues({
