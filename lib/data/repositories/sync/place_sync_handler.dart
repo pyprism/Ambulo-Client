@@ -81,11 +81,21 @@ class PlaceSyncHandler implements SyncTypeHandler {
   Future<void> upsertDownloaded(
     Map<String, dynamic> json, {
     required bool forceOverwriteConflicts,
+    Set<String>? allowedConflictIds,
   }) async {
+    final id = json['id'] as String;
     final existing = await (_db.select(
       _db.places,
-    )..where((t) => t.id.equals(json['id'] as String))).getSingleOrNull();
-    if (!forceOverwriteConflicts && existing?.syncState == SyncState.conflict) {
+    )..where((t) => t.id.equals(id))).getSingleOrNull();
+    final canOverwriteConflict =
+        forceOverwriteConflicts &&
+        (allowedConflictIds == null || allowedConflictIds.contains(id));
+    if (!canOverwriteConflict && existing?.syncState == SyncState.conflict) {
+      return;
+    }
+    if (existing != null &&
+        existing.localRev > (json['local_rev'] as int? ?? 0)) {
+      await _adoptServerRevOnly(id, existing, json);
       return;
     }
 
@@ -118,7 +128,7 @@ class PlaceSyncHandler implements SyncTypeHandler {
         .into(_db.places)
         .insertOnConflictUpdate(
           PlacesCompanion(
-            id: Value(json['id'] as String),
+            id: Value(id),
             localRev: Value(json['local_rev'] as int? ?? 0),
             serverRev: Value(json['server_rev'] as int?),
             syncState: Value(syncStateFromWire(json['sync_state'] as String)),
@@ -130,6 +140,7 @@ class PlaceSyncHandler implements SyncTypeHandler {
                   ? null
                   : DateTime.parse(json['deleted_at'] as String),
             ),
+            deviceId: Value(json['device'] as String?),
             name: Value(json['name'] as String),
             category: Value(
               PlaceCategory.values.byName(json['category'] as String),
@@ -146,13 +157,29 @@ class PlaceSyncHandler implements SyncTypeHandler {
         );
   }
 
+  /// A row whose local edit is newer than this download's snapshot skips
+  /// the data update above — but the server_rev the server just assigned
+  /// must still land locally, or this row's cached server_rev goes stale
+  /// and the *next* upload's base_server_rev mismatches the server's real
+  /// value, misreporting a conflict against nobody but this client's own
+  /// prior sync.
+  Future<void> _adoptServerRevOnly(
+    String id,
+    Place existing,
+    Map<String, dynamic> json,
+  ) async {
+    final serverRev = json['server_rev'] as int?;
+    if (serverRev == null || serverRev == existing.serverRev) return;
+    await (_db.update(_db.places)..where((t) => t.id.equals(id))).write(
+      PlacesCompanion(serverRev: Value(serverRev)),
+    );
+  }
+
   @override
   Future<SyncTypeCounts> counts() async {
     final t = _db.places;
     final pendingCount = countAll(
-      filter:
-          t.syncState.equalsValue(SyncState.pendingUpload) |
-          t.syncState.equalsValue(SyncState.localOnly),
+      filter: t.syncState.equalsValue(SyncState.pendingUpload),
     );
     final failedCount = countAll(
       filter: t.syncState.equalsValue(SyncState.failed),
