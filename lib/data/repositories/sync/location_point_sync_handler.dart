@@ -90,19 +90,32 @@ class LocationPointSyncHandler implements SyncTypeHandler {
   Future<void> upsertDownloaded(
     Map<String, dynamic> json, {
     required bool forceOverwriteConflicts,
+    Set<String>? allowedConflictIds,
   }) async {
-    if (!forceOverwriteConflicts) {
-      final existing = await (_db.select(
-        _db.locationPoints,
-      )..where((t) => t.id.equals(json['id'] as String))).getSingleOrNull();
-      if (existing?.syncState == SyncState.conflict) return;
+    final id = json['id'] as String;
+    final existing = await (_db.select(
+      _db.locationPoints,
+    )..where((t) => t.id.equals(id))).getSingleOrNull();
+    final canOverwriteConflict =
+        forceOverwriteConflicts &&
+        (allowedConflictIds == null || allowedConflictIds.contains(id));
+    if (!canOverwriteConflict && existing?.syncState == SyncState.conflict) {
+      return;
+    }
+    // A row edited locally after this record's upload snapshot was taken
+    // (still pendingUpload, but localRev has moved on) must not be rewound
+    // by applying that stale snapshot back from download.
+    if (existing != null &&
+        existing.localRev > (json['local_rev'] as int? ?? 0)) {
+      await _adoptServerRevOnly(id, existing, json);
+      return;
     }
 
     await _db
         .into(_db.locationPoints)
         .insertOnConflictUpdate(
           LocationPointsCompanion(
-            id: Value(json['id'] as String),
+            id: Value(id),
             localRev: Value(json['local_rev'] as int? ?? 0),
             serverRev: Value(json['server_rev'] as int?),
             syncState: Value(syncStateFromWire(json['sync_state'] as String)),
@@ -114,6 +127,7 @@ class LocationPointSyncHandler implements SyncTypeHandler {
                   ? null
                   : DateTime.parse(json['deleted_at'] as String),
             ),
+            deviceId: Value(json['device'] as String?),
             latitude: Value((json['latitude'] as num).toDouble()),
             longitude: Value((json['longitude'] as num).toDouble()),
             altitude: Value((json['altitude'] as num?)?.toDouble()),
@@ -143,13 +157,32 @@ class LocationPointSyncHandler implements SyncTypeHandler {
         );
   }
 
+  /// A row whose local edit is newer than this download's snapshot skips
+  /// the data update above — but the server_rev the server just assigned
+  /// must still land locally, or this row's cached server_rev goes stale
+  /// and the *next* upload's base_server_rev mismatches the server's real
+  /// value, misreporting a conflict against nobody but this client's own
+  /// prior sync.
+  Future<void> _adoptServerRevOnly(
+    String id,
+    LocationPoint existing,
+    Map<String, dynamic> json,
+  ) async {
+    final serverRev = json['server_rev'] as int?;
+    if (serverRev == null || serverRev == existing.serverRev) return;
+    await (_db.update(_db.locationPoints)..where((t) => t.id.equals(id))).write(
+      LocationPointsCompanion(serverRev: Value(serverRev)),
+    );
+  }
+
   @override
   Future<SyncTypeCounts> counts() async {
     final t = _db.locationPoints;
+    // localOnly rows are never picked up by pendingWireRecords() (only
+    // pendingUpload/failed are), so counting them as "pending" showed a
+    // permanent nonzero count that "Sync now" could never drain.
     final pendingCount = countAll(
-      filter:
-          t.syncState.equalsValue(SyncState.pendingUpload) |
-          t.syncState.equalsValue(SyncState.localOnly),
+      filter: t.syncState.equalsValue(SyncState.pendingUpload),
     );
     final failedCount = countAll(
       filter: t.syncState.equalsValue(SyncState.failed),
