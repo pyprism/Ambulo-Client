@@ -1,8 +1,8 @@
 name: ambulo
-description: "Ambulo — privacy-first, self-hostable location tracker and fitness dashboard."
+description: "Ambulo — privacy-first, self-hostable location tracker and fitness app."
 publish_to: 'none'
 
-version: 1.0.0+2
+version: 1.0.4+2
 
 environment:
   sdk: ^3.12.2
