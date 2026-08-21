@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:health/health.dart';
 
 import '../../data/local/tables/health_samples_table.dart';
@@ -11,11 +12,17 @@ class HealthConnectPoint {
     required this.metricType,
     required this.value,
     required this.recordedAt,
+    this.sourceName = '',
   });
 
   final HealthMetricType metricType;
   final double value;
   final DateTime recordedAt;
+
+  /// Package name of the app/device stream this reading came from, used by
+  /// `HealthConnectRepository` to collapse the same day's competing sources
+  /// instead of summing them. Defaults to a single unnamed source.
+  final String sourceName;
 }
 
 /// Thrown when Health Connect itself (not a specific read) can't proceed.
@@ -44,22 +51,44 @@ HealthMetricType? _metricTypeFor(HealthDataType type) => switch (type) {
   _ => null,
 };
 
-// One calendar day per aggregate query. Health Connect's raw
-// getHealthDataFromTypes returns *every* underlying record from every
-// source app/device stream (Google Fit phone, watch, Samsung Health, …)
-// unaggregated — summing those double- and triple-counts any day covered by
-// more than one stream. Querying the aggregate API one day at a time keeps
-// each call's own cross-source dedup scoped to exactly one calendar day, so
-// a record spanning a day boundary can't get attributed (or double
-// attributed) across two of our buckets the way summing raw dateFrom-keyed
-// records could.
-const _aggregateWindow = Duration(days: 1);
+// `health` 13.3.2's `getHealthAggregateDataFromTypes` is unusable on
+// Android: the Dart side sends `dataTypeKeys`/`activitySegmentDuration`
+// while `HealthDataReader.getAggregateData` reads `dataTypeKey`/`interval`,
+// so both come back null and the Kotlin `!!` throws before the call even
+// reaches Health Connect. 13.3.2 is the latest release, so there's no
+// version to upgrade to. Everything below works around that by using only
+// the two channel methods whose argument names actually line up:
+// `getTotalStepsInInterval` and `getData`.
+
+/// Raw records are fetched in windows this wide rather than one day at a
+/// time — the day-at-a-time loop this replaced issued one platform call per
+/// calendar day back to 2010 (~5,700 round trips per import, nearly all of
+/// them over empty ranges).
+const _rawScanChunk = Duration(days: 90);
+
+/// Source name stamped on step totals, which Health Connect has already
+/// merged across every underlying stream — one synthetic source, so the
+/// repository's max-per-source reduction passes the value through untouched.
+const _aggregateSource = 'healthconnect:aggregate';
+
+// Health Connect returns every underlying record from every source stream
+// (phone, watch, Samsung Health, …) un-deduplicated, so summing them
+// double-counts any day covered by more than one source. Steps avoid this
+// entirely via the aggregate API. Distance and calories have no working
+// aggregate path in 13.3.2, so each day takes the *largest* single-source
+// total instead of the sum across sources: the phone and the watch both
+// track the same walk, and the more complete of the two is much closer to
+// the truth than their sum. The known cost is an undercount on days where
+// two sources genuinely covered disjoint periods.
 
 /// Thin wrapper around the `health` package — the only part of this feature
 /// that can't be exercised without a real Android device + Health Connect
-/// app + Google Fit history, so it stays intentionally free of any mapping,
-/// dedup, or aggregation logic (that lives in `HealthConnectRepository`,
-/// which is plain Dart and unit-testable).
+/// app + Google Fit history, so it stays intentionally free of dedup and
+/// aggregation logic (that lives in `HealthConnectRepository`, which is
+/// plain Dart and unit-testable). It translates the `health` package's types
+/// into Ambulo's and decides which windows to ask the platform for; it never
+/// decides what a day's total is. The one apparent exception, per-day step
+/// totals, is Health Connect doing the aggregating, not this class.
 class HealthConnectAdapter {
   HealthConnectAdapter([Health? health]) : _health = health ?? Health();
 
@@ -95,13 +124,17 @@ class HealthConnectAdapter {
       () => _health.requestAuthorization(_requestedTypes),
     );
     if (!granted) return false;
-    // Best-effort: full history is the point of this feature, but if the
-    // user declines just this extra grant, later reads silently fall back
-    // to Health Connect's default 30-day window rather than failing.
-    await _step(
-      'history permission request',
-      _health.requestHealthDataHistoryAuthorization,
-    );
+    // Best-effort, and that has to include *crashing*: full history is the
+    // point of this feature, but the data-type grant above is what actually
+    // makes it usable. If the user declines this extra grant — or the plugin
+    // throws on the way to asking — later reads fall back to Health Connect's
+    // default 30-day window instead of the whole import failing. Swallowed
+    // rather than routed through `_step`, which rethrows.
+    try {
+      await _health.requestHealthDataHistoryAuthorization();
+    } catch (e) {
+      debugPrint('Health Connect history grant skipped: $e');
+    }
     return true;
   }
 
@@ -132,44 +165,100 @@ class HealthConnectAdapter {
     return await _health.hasPermissions([HealthDataType.STEPS]) ?? false;
   }
 
-  /// Reads every requested data type across [start, end) as one aggregated,
-  /// deduplicated total per metric per calendar day — never raw per-source
-  /// records (see [_aggregateWindow]).
+  /// Every reading in [start, end), as raw per-source rows for distance and
+  /// calories plus one already-deduplicated total per day for steps.
+  ///
+  /// Pure I/O: bucketing readings into days and collapsing competing sources
+  /// happens in `HealthConnectRepository`, where it is unit-testable.
+  ///
+  /// Two passes, because 13.3.2 leaves us two working tools:
+  ///
+  ///  1. A chunked raw scan ([_rawScanChunk]) over the whole range. It
+  ///     supplies distance/calories readings directly, and — for steps —
+  ///     only the *set of days that actually hold data*, so pass 2 never
+  ///     queries an empty day.
+  ///  2. One `getTotalStepsInInterval` call per step day. That routes to
+  ///     Health Connect's own `aggregate(StepsRecord.COUNT_TOTAL)`, so steps
+  ///     come back exactly deduplicated rather than needing the
+  ///     max-per-source approximation distance and calories settle for.
+  ///
+  /// [stepsAggregateBefore] skips pass 2 for days at or after it — the
+  /// caller already knows it will discard those in favour of the pedometer,
+  /// and each one costs a platform round trip.
   Future<List<HealthConnectPoint>> readAll({
     required DateTime start,
     required DateTime end,
+    DateTime? stepsAggregateBefore,
   }) async {
+    final raw = await _rawScan(start: _startOfDay(start), end: end);
+
     final points = <HealthConnectPoint>[];
-    var dayStart = DateTime(start.year, start.month, start.day);
-    while (dayStart.isBefore(end)) {
-      final dayEnd = dayStart.add(_aggregateWindow);
-      final windowEnd = dayEnd.isAfter(end) ? end : dayEnd;
-      final raw = await _health.getHealthAggregateDataFromTypes(
-        types: _requestedTypes,
-        startDate: dayStart,
-        endDate: windowEnd,
-      );
-      for (final point in raw) {
-        final metricType = _metricTypeFor(point.type);
-        final value = point.value;
-        if (metricType == null || value is! NumericHealthValue) continue;
-        points.add(
-          HealthConnectPoint(
-            metricType: metricType,
-            value: value.numericValue.toDouble(),
-            // Stamped with the query window's own day rather than trusting
-            // the aggregate point's dateFrom — the whole point of querying
-            // one day at a time is that every point returned belongs to
-            // this day, regardless of which moment inside it dateFrom
-            // happens to report.
-            recordedAt: dayStart,
-          ),
-        );
+    final stepDays = <DateTime>{};
+    for (final record in raw) {
+      final metricType = _metricTypeFor(record.type);
+      final value = record.value;
+      if (metricType == null || value is! NumericHealthValue) continue;
+      if (metricType == HealthMetricType.steps) {
+        // Value deliberately dropped — pass 2 re-reads the day exactly.
+        stepDays.add(_startOfDay(record.dateFrom));
+        continue;
       }
-      dayStart = dayEnd;
+      points.add(
+        HealthConnectPoint(
+          metricType: metricType,
+          value: value.numericValue.toDouble(),
+          recordedAt: record.dateFrom,
+          sourceName: record.sourceName,
+        ),
+      );
     }
+
+    for (final day in stepDays) {
+      if (stepsAggregateBefore != null && !day.isBefore(stepsAggregateBefore)) {
+        continue;
+      }
+      final dayEnd = day.add(const Duration(days: 1));
+      final steps = await _health.getTotalStepsInInterval(
+        day,
+        dayEnd.isAfter(end) ? end : dayEnd,
+      );
+      if (steps == null) continue;
+      points.add(
+        HealthConnectPoint(
+          metricType: HealthMetricType.steps,
+          value: steps.toDouble(),
+          recordedAt: day,
+          sourceName: _aggregateSource,
+        ),
+      );
+    }
+
     return points;
   }
+
+  /// Raw per-source records across the whole range, fetched in
+  /// [_rawScanChunk]-wide windows to bound how much comes back per call.
+  Future<List<HealthDataPoint>> _rawScan({
+    required DateTime start,
+    required DateTime end,
+  }) async {
+    final raw = <HealthDataPoint>[];
+    var chunkStart = start;
+    while (chunkStart.isBefore(end)) {
+      final chunkEnd = chunkStart.add(_rawScanChunk);
+      raw.addAll(
+        await _health.getHealthDataFromTypes(
+          types: _requestedTypes,
+          startTime: chunkStart,
+          endTime: chunkEnd.isAfter(end) ? end : chunkEnd,
+        ),
+      );
+      chunkStart = chunkEnd;
+    }
+    return raw;
+  }
+
+  DateTime _startOfDay(DateTime d) => DateTime(d.year, d.month, d.day);
 
   /// Exact deduplicated step total in `[start, end)` — used to anchor the
   /// pedometer's day-rollover baseline, where [readAll]'s day-bucketed
