@@ -17,6 +17,9 @@ class _FakeHealthConnectAdapter extends HealthConnectAdapter {
   final bool granted;
   final List<HealthConnectPoint> points;
 
+  /// Records what `connectAndImportAll` asked the adapter to skip.
+  DateTime? lastStepsAggregateBefore;
+
   @override
   Future<bool> requestPermissions() async => granted;
 
@@ -24,7 +27,11 @@ class _FakeHealthConnectAdapter extends HealthConnectAdapter {
   Future<List<HealthConnectPoint>> readAll({
     required DateTime start,
     required DateTime end,
-  }) async => points;
+    DateTime? stepsAggregateBefore,
+  }) async {
+    lastStepsAggregateBefore = stepsAggregateBefore;
+    return points;
+  }
 }
 
 void main() {
@@ -59,6 +66,106 @@ void main() {
     );
     final summary = await repo.connectAndImportAll();
     expect(summary, isNull);
+  });
+
+  test('same-day readings from one source are summed', () async {
+    final day = DateTime(2026, 3, 4);
+    final repo = HealthConnectRepository(
+      db,
+      _FakeHealthConnectAdapter(
+        points: [
+          HealthConnectPoint(
+            metricType: HealthMetricType.distance,
+            value: 300,
+            recordedAt: day.add(const Duration(hours: 8)),
+            sourceName: 'com.example.phone',
+          ),
+          HealthConnectPoint(
+            metricType: HealthMetricType.distance,
+            value: 700,
+            recordedAt: day.add(const Duration(hours: 17)),
+            sourceName: 'com.example.phone',
+          ),
+        ],
+      ),
+    );
+    await repo.connectAndImportAll();
+
+    final row =
+        await (db.select(db.healthSamples)..where(
+              (t) => t.metricType.equalsValue(HealthMetricType.distance),
+            ))
+            .getSingle();
+    expect(row.value, 1000);
+  });
+
+  test(
+    'competing sources on one day collapse to the largest, not the sum',
+    () async {
+      final day = DateTime(2026, 3, 5);
+      final repo = HealthConnectRepository(
+        db,
+        _FakeHealthConnectAdapter(
+          points: [
+            // Phone logged the whole walk; the watch logged most of it. Both
+            // describe the same 1200m, so summing would report 2100m.
+            HealthConnectPoint(
+              metricType: HealthMetricType.distance,
+              value: 1200,
+              recordedAt: day.add(const Duration(hours: 9)),
+              sourceName: 'com.example.phone',
+            ),
+            HealthConnectPoint(
+              metricType: HealthMetricType.distance,
+              value: 900,
+              recordedAt: day.add(const Duration(hours: 9)),
+              sourceName: 'com.example.watch',
+            ),
+          ],
+        ),
+      );
+      await repo.connectAndImportAll();
+
+      final row =
+          await (db.select(db.healthSamples)..where(
+                (t) => t.metricType.equalsValue(HealthMetricType.distance),
+              ))
+              .getSingle();
+      expect(row.value, 1200);
+    },
+  );
+
+  test('a reading is bucketed by the calendar day it starts in', () async {
+    final repo = HealthConnectRepository(
+      db,
+      _FakeHealthConnectAdapter(
+        points: [
+          // Starts 23:30 on the 6th and runs past midnight — counts wholly
+          // toward the 6th.
+          HealthConnectPoint(
+            metricType: HealthMetricType.calories,
+            value: 120,
+            recordedAt: DateTime(2026, 3, 6, 23, 30),
+            sourceName: 'com.example.phone',
+          ),
+        ],
+      ),
+    );
+    await repo.connectAndImportAll();
+
+    final row =
+        await (db.select(db.healthSamples)..where(
+              (t) => t.metricType.equalsValue(HealthMetricType.calories),
+            ))
+            .getSingle();
+    expect(row.recordedAt, DateTime(2026, 3, 6));
+  });
+
+  test('tells the adapter which step days it can skip aggregating', () async {
+    await seedMotionSteps(DateTime(2026, 3, 10), 500);
+    final adapter = _FakeHealthConnectAdapter();
+    await HealthConnectRepository(db, adapter).connectAndImportAll();
+    expect(adapter.lastStepsAggregateBefore, DateTime(2026, 3, 10));
   });
 
   test('aggregates same-day points into one daily sum per metric', () async {
