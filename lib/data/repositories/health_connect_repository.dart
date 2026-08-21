@@ -91,6 +91,9 @@ class HealthConnectRepository {
     final points = await _adapter.readAll(
       start: _earliestPossibleDate,
       end: DateTime.now(),
+      // Days at or after the cutoff get dropped below anyway; telling the
+      // adapter spares a platform round trip per discarded day.
+      stepsAggregateBefore: stepsCutoff,
     );
     final daily = _aggregateByDay(points);
 
@@ -128,19 +131,37 @@ class HealthConnectRepository {
     return earliestDay.isBefore(today) ? earliestDay : today;
   }
 
+  /// Collapses readings into one total per metric per calendar day.
+  ///
+  /// Readings from the *same* source are summed — that's a day's worth of
+  /// consecutive records from one device. Readings from *different* sources
+  /// are not: a phone and a watch both log the same walk, so summing them
+  /// double-counts it. The largest single-source total is taken instead, on
+  /// the grounds that the most complete recorder of a day is much closer to
+  /// the truth than every recorder added together. This under-reports a day
+  /// where two sources genuinely covered disjoint periods — the lesser evil,
+  /// and unavoidable while `health`'s deduplicated aggregate API is broken
+  /// (see [HealthConnectAdapter.readAll]). Steps never reach the
+  /// max-per-source branch: Health Connect aggregates those itself and the
+  /// adapter stamps them with a single synthetic source.
   Map<(HealthMetricType, DateTime), double> _aggregateByDay(
     List<HealthConnectPoint> points,
   ) {
-    final daily = <(HealthMetricType, DateTime), double>{};
+    final perSource = <(HealthMetricType, DateTime), Map<String, double>>{};
     for (final point in points) {
       final key = (point.metricType, _startOfDay(point.recordedAt));
-      daily.update(
-        key,
-        (value) => value + point.value,
-        ifAbsent: () => point.value,
-      );
+      perSource
+          .putIfAbsent(key, () => <String, double>{})
+          .update(
+            point.sourceName,
+            (value) => value + point.value,
+            ifAbsent: () => point.value,
+          );
     }
-    return daily;
+    return {
+      for (final entry in perSource.entries)
+        entry.key: entry.value.values.reduce((a, b) => a > b ? a : b),
+    };
   }
 
   String _idFor(HealthMetricType metricType, DateTime day) {
