@@ -77,20 +77,46 @@ class HealthConnectAdapter {
         'Health Connect is only available on Android.',
       );
     }
-    await _health.configure();
-    if (!await _health.isHealthConnectAvailable()) {
+    // Each native hop is labelled: a `PlatformException` raised inside any of
+    // them surfaces only as an opaque JVM message (Health Connect and its
+    // transitive `device_info_plus` dependency both throw them), which on its
+    // own doesn't say *which* call failed. The step name is the only thing
+    // that separates a `configure()` (device_info_plus) failure from a Health
+    // Connect one when all we have to go on is a user-reported snackbar.
+    await _step('configure', () => _health.configure());
+    if (!await _step('availability check', _health.isHealthConnectAvailable)) {
       throw HealthConnectUnavailableException(
         'Health Connect isn\'t installed on this device.',
         needsInstall: true,
       );
     }
-    final granted = await _health.requestAuthorization(_requestedTypes);
+    final granted = await _step(
+      'permission request',
+      () => _health.requestAuthorization(_requestedTypes),
+    );
     if (!granted) return false;
     // Best-effort: full history is the point of this feature, but if the
     // user declines just this extra grant, later reads silently fall back
     // to Health Connect's default 30-day window rather than failing.
-    await _health.requestHealthDataHistoryAuthorization();
+    await _step(
+      'history permission request',
+      _health.requestHealthDataHistoryAuthorization,
+    );
     return true;
+  }
+
+  /// Runs [action], re-throwing anything it raises as a
+  /// [HealthConnectUnavailableException] tagged with [step].
+  Future<T> _step<T>(String step, Future<T> Function() action) async {
+    try {
+      return await action();
+    } on HealthConnectUnavailableException {
+      rethrow;
+    } catch (e) {
+      throw HealthConnectUnavailableException(
+        'Health Connect $step failed: $e',
+      );
+    }
   }
 
   Future<void> promptInstall() => _health.installHealthConnect();
