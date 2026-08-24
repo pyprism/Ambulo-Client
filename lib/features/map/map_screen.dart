@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -35,9 +37,31 @@ class MapScreen extends ConsumerStatefulWidget {
   ConsumerState<MapScreen> createState() => _MapScreenState();
 }
 
+// Friend sharing is poll-based, never push (see CLAUDE.md locked decision
+// #6) — this timer just shortens the poll interval to a few seconds while
+// the map is open, so it feels live without adding a push channel.
+const _friendLocationPollInterval = Duration(seconds: 8);
+
 class _MapScreenState extends ConsumerState<MapScreen> {
   final _mapController = MapController();
   bool _recording = false;
+  Timer? _friendPollTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _friendPollTimer = Timer.periodic(_friendLocationPollInterval, (_) {
+      if (ref.read(authControllerProvider).value != null) {
+        ref.invalidate(friendLocationsProvider);
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _friendPollTimer?.cancel();
+    super.dispose();
+  }
 
   Future<void> _recordNow() async {
     setState(() => _recording = true);
