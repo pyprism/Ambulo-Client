@@ -12,8 +12,8 @@ dependencies:
     sdk: flutter
 
   cupertino_icons: ^1.0.8
-  flutter_riverpod: ^3.3.2
-  riverpod_annotation: ^4.0.3
+  flutter_riverpod: ^3.4.2
+  riverpod_annotation: ^4.0.6
   drift: ^2.34.3
   path_provider: ^2.1.6
   path: ^1.9.1
@@ -48,10 +48,10 @@ dev_dependencies:
     sdk: flutter
 
   flutter_lints: ^6.0.0
-  build_runner: ^2.15.1
-  drift_dev: ^2.34.0
-  riverpod_generator: ^4.0.4
-  freezed: ^3.2.6-dev.1
+  build_runner: ^2.16.0
+  drift_dev: ^2.34.5
+  riverpod_generator: ^4.0.8
+  freezed: ^4.0.0
   json_serializable: ^6.14.1
   flutter_launcher_icons: ^0.14.4
   geolocator_platform_interface: ^4.2.8
