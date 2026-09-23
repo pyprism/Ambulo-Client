@@ -222,9 +222,7 @@ class _ImportExportScreenState extends ConsumerState<ImportExportScreen> {
       // still eagerly loads bytes on web and works.
       // ignore: deprecated_member_use
       final result = await FilePicker.pickFiles(allowMultiple: false);
-      final file = result?.files.isNotEmpty == true
-          ? result!.files.first
-          : null;
+      final file = result.isNotEmpty ? result.first : null;
       if (file == null) return;
       final bytes = await file.readAsBytes();
       final content = utf8.decode(bytes, allowMalformed: true);
@@ -279,9 +277,7 @@ class _ImportExportScreenState extends ConsumerState<ImportExportScreen> {
       // pickFile()'s withData:false lazy-load path is broken on web.
       // ignore: deprecated_member_use
       final result = await FilePicker.pickFiles(allowMultiple: false);
-      final file = result?.files.isNotEmpty == true
-          ? result!.files.first
-          : null;
+      final file = result.isNotEmpty ? result.first : null;
       if (file == null) return;
       final bytes = await file.readAsBytes();
       final job = await ref
