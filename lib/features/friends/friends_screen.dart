@@ -79,9 +79,8 @@ Future<void> _runFriendAction(
     ref.invalidate(friendshipsProvider);
   } on DioException catch (e) {
     if (context.mounted) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(describeDioError(e))));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(describeDioError(e))));
     }
   } catch (e) {
     if (context.mounted) {
@@ -519,8 +518,7 @@ class _AcceptedFriendTile extends ConsumerWidget {
                 final confirmed = await _confirm(
                   context,
                   title: 'Remove ${friendship.otherUsername(myUsername)}?',
-                  message:
-                      'This ends the friendship and location sharing both ways.',
+                  message: 'This ends the friendship and location sharing both ways.',
                   confirmLabel: 'Remove',
                 );
                 if (!confirmed || !context.mounted) return;
@@ -580,9 +578,8 @@ class _SectionHeader extends StatelessWidget {
       padding: const EdgeInsets.only(bottom: 8, left: 4),
       child: Text(
         text,
-        style: Theme.of(context).textTheme.labelLarge?.copyWith(
-          color: Theme.of(context).colorScheme.outline,
-        ),
+        style: Theme.of(context).textTheme.labelLarge
+            ?.copyWith(color: Theme.of(context).colorScheme.outline),
       ),
     );
   }

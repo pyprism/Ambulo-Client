@@ -73,9 +73,7 @@ class _MapScreenState extends ConsumerState<MapScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-          ok
-              ? 'Location recorded'
-              : 'Could not get a location — check permissions and that location services are on.',
+          ok ? 'Location recorded' : 'Could not get a location — check permissions and that location services are on.',
         ),
       ),
     );
@@ -198,12 +196,11 @@ class _MapScreenState extends ConsumerState<MapScreen> {
                               ),
                               radius: place.radiusMeters,
                               useRadiusInMeter: true,
-                              color: Theme.of(
-                                context,
-                              ).colorScheme.tertiary.withValues(alpha: 0.15),
-                              borderColor: Theme.of(
-                                context,
-                              ).colorScheme.tertiary,
+                              color: Theme.of(context).colorScheme.tertiary
+                                  .withValues(alpha: 0.15),
+                              borderColor: Theme.of(context)
+                                  .colorScheme
+                                  .tertiary,
                               borderStrokeWidth: 1,
                             ),
                         ],
@@ -297,9 +294,8 @@ class _FriendMarker extends StatelessWidget {
           ),
           child: Text(
             username,
-            style: Theme.of(context).textTheme.labelSmall?.copyWith(
-              color: Theme.of(context).colorScheme.onPrimary,
-            ),
+            style: Theme.of(context).textTheme.labelSmall
+                ?.copyWith(color: Theme.of(context).colorScheme.onPrimary),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
           ),

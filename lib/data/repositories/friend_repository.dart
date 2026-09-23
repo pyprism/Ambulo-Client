@@ -150,9 +150,9 @@ class FriendRepository {
 
   Future<List<Friendship>> listFriendships() async {
     final response = await _dio.get('/api/friends/');
-    return _asList(
-      response.data,
-    ).map((e) => Friendship.fromJson(e as Map<String, dynamic>)).toList();
+    return _asList(response.data)
+        .map((e) => Friendship.fromJson(e as Map<String, dynamic>))
+        .toList();
   }
 
   Future<Friendship> sendRequest({String? username, String? shareCode}) async {
@@ -193,9 +193,9 @@ class FriendRepository {
 
   Future<List<AppNotification>> listNotifications() async {
     final response = await _dio.get('/api/notifications/');
-    return _asList(
-      response.data,
-    ).map((e) => AppNotification.fromJson(e as Map<String, dynamic>)).toList();
+    return _asList(response.data)
+        .map((e) => AppNotification.fromJson(e as Map<String, dynamic>))
+        .toList();
   }
 
   Future<void> markNotificationRead(String id) =>

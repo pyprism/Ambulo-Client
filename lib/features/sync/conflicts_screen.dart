@@ -36,9 +36,8 @@ class _ConflictsScreenState extends ConsumerState<ConflictsScreen> {
       _resolving.remove(conflict.id);
       _reload();
     });
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(error ?? 'Kept your version')));
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(error ?? 'Kept your version')));
   }
 
   Future<void> _takeTheirsAll(String typeName) async {

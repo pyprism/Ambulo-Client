@@ -34,8 +34,7 @@ class NotificationsScreen extends ConsumerWidget {
                     child: const EmptyState(
                       icon: Icons.notifications_none,
                       title: 'No notifications',
-                      message:
-                          'Friend requests and friend geofence events show up here.',
+                      message: 'Friend requests and friend geofence events show up here.',
                     ),
                   ),
                 ],

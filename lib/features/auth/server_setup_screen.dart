@@ -52,9 +52,8 @@ class _ServerSetupScreenState extends ConsumerState<ServerSetupScreen> {
         .read(serverConfigProvider.notifier)
         .setServerAddress(_controller.text.trim());
     if (!mounted) return;
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: Text('Server address saved')));
+    ScaffoldMessenger.of(context)
+        .showSnackBar(const SnackBar(content: Text('Server address saved')));
     Navigator.of(context).maybePop();
   }
 

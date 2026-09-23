@@ -81,8 +81,7 @@ class NotificationService {
       android: AndroidNotificationDetails(
         _moveModeChannelId,
         _moveModeChannelName,
-        channelDescription:
-            'Reminds you when Move mode has been on for a while — it uses significant battery.',
+        channelDescription: 'Reminds you when Move mode has been on for a while — it uses significant battery.',
         importance: Importance.defaultImportance,
         priority: Priority.defaultPriority,
       ),

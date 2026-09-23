@@ -13,11 +13,9 @@ import 'package:ambulo/data/local/tables/location_points_table.dart';
 import 'package:ambulo/data/local/tables/sync_columns.dart';
 
 void main() {
-  test(
-    'migration 5->6: existing location_points rows survive, new columns are null',
-    () async {
-      final raw = sqlite3.sqlite3.openInMemory();
-      raw.execute('''
+  test('migration 5->6: existing location_points rows survive, new columns are null', () async {
+    final raw = sqlite3.sqlite3.openInMemory();
+    raw.execute('''
         CREATE TABLE "location_points" (
           "id" TEXT NOT NULL,
           "user_id" TEXT NULL,
@@ -43,42 +41,41 @@ void main() {
           PRIMARY KEY ("id")
         )
       ''');
-      raw.execute('''
+    raw.execute('''
         INSERT INTO location_points
           (id, source, latitude, longitude, speed, recorded_at, monitoring_mode)
         VALUES
           ('pre-v6', 'location', 52.0, 13.0, 1.5, 1700000000, 'move')
       ''');
-      raw.execute('PRAGMA user_version = 5');
+    raw.execute('PRAGMA user_version = 5');
 
-      final db = AppDatabase.forTesting(NativeDatabase.opened(raw));
-      final row = await (db.select(
-        db.locationPoints,
-      )..where((t) => t.id.equals('pre-v6'))).getSingle();
+    final db = AppDatabase.forTesting(NativeDatabase.opened(raw));
+    final row = await (db.select(
+      db.locationPoints,
+    )..where((t) => t.id.equals('pre-v6'))).getSingle();
 
-      expect(row.speed, 1.5);
-      expect(row.speedAccuracy, isNull);
-      expect(row.tripId, isNull);
+    expect(row.speed, 1.5);
+    expect(row.speedAccuracy, isNull);
+    expect(row.tripId, isNull);
 
-      await db
-          .into(db.locationPoints)
-          .insert(
-            LocationPointsCompanion.insert(
-              latitude: 52.1,
-              longitude: 13.1,
-              speedAccuracy: const Value(0.8),
-              tripId: const Value('trip-1'),
-              recordedAt: DateTime.fromMillisecondsSinceEpoch(1700001000000),
-              monitoringMode: MonitoringMode.move,
-              source: RecordSource.location,
-            ),
-          );
-      final newRow = await (db.select(
-        db.locationPoints,
-      )..where((t) => t.tripId.equals('trip-1'))).getSingle();
-      expect(newRow.speedAccuracy, 0.8);
+    await db
+        .into(db.locationPoints)
+        .insert(
+          LocationPointsCompanion.insert(
+            latitude: 52.1,
+            longitude: 13.1,
+            speedAccuracy: const Value(0.8),
+            tripId: const Value('trip-1'),
+            recordedAt: DateTime.fromMillisecondsSinceEpoch(1700001000000),
+            monitoringMode: MonitoringMode.move,
+            source: RecordSource.location,
+          ),
+        );
+    final newRow = await (db.select(
+      db.locationPoints,
+    )..where((t) => t.tripId.equals('trip-1'))).getSingle();
+    expect(newRow.speedAccuracy, 0.8);
 
-      await db.close();
-    },
-  );
+    await db.close();
+  });
 }

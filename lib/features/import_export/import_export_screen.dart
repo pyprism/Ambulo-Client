@@ -231,9 +231,8 @@ class _ImportExportScreenState extends ConsumerState<ImportExportScreen> {
           .parseAndPreview(file.name, content);
     } on UnrecognizedImportFormatException catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('$e')));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('$e')));
       }
       return;
     } catch (e) {
@@ -286,9 +285,8 @@ class _ImportExportScreenState extends ConsumerState<ImportExportScreen> {
       await _pollArchiveJob(job.id);
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Upload failed: $e')));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Upload failed: $e')));
       }
     } finally {
       if (mounted) setState(() => _archiveBusy = false);
@@ -470,9 +468,8 @@ class _SectionHeader extends StatelessWidget {
       padding: const EdgeInsets.only(bottom: 8, left: 4),
       child: Text(
         text,
-        style: Theme.of(context).textTheme.labelLarge?.copyWith(
-          color: Theme.of(context).colorScheme.outline,
-        ),
+        style: Theme.of(context).textTheme.labelLarge
+            ?.copyWith(color: Theme.of(context).colorScheme.outline),
       ),
     );
   }

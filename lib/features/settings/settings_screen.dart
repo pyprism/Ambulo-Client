@@ -303,8 +303,7 @@ class SettingsScreen extends ConsumerWidget {
           'keep counting regardless of mode.',
     MonitoringMode.significant =>
       'Coarse, low-power tracking using OS significant-change detection.',
-    MonitoringMode.move =>
-      'Precise tracking with a visible foreground indicator. Uses more battery.',
+    MonitoringMode.move => 'Precise tracking with a visible foreground indicator. Uses more battery.',
   };
 }
 
@@ -460,9 +459,8 @@ class _PersonalDataSection extends ConsumerWidget {
                       'and sex, to personalize calorie estimates. Until all '
                       'four are available, a rough flat-rate estimate is '
                       'used instead.',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: Theme.of(context).colorScheme.outline,
-            ),
+            style: Theme.of(context).textTheme.bodySmall
+                ?.copyWith(color: Theme.of(context).colorScheme.outline),
           ),
         ),
         ListTile(
@@ -856,9 +854,8 @@ class _SectionHeader extends StatelessWidget {
       padding: const EdgeInsets.only(bottom: 8, left: 4),
       child: Text(
         text,
-        style: Theme.of(context).textTheme.labelLarge?.copyWith(
-          color: Theme.of(context).colorScheme.outline,
-        ),
+        style: Theme.of(context).textTheme.labelLarge
+            ?.copyWith(color: Theme.of(context).colorScheme.outline),
       ),
     );
   }

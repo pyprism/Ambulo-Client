@@ -8357,30 +8357,28 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   ];
 }
 
-typedef $$DevicesTableCreateCompanionBuilder =
-    DevicesCompanion Function({
-      required String id,
-      Value<String?> userId,
-      required String name,
-      required String platform,
-      Value<String?> appVersion,
-      Value<bool> isCurrentDevice,
-      Value<DateTime> registeredAt,
-      Value<DateTime> lastSeenAt,
-      Value<int> rowid,
-    });
-typedef $$DevicesTableUpdateCompanionBuilder =
-    DevicesCompanion Function({
-      Value<String> id,
-      Value<String?> userId,
-      Value<String> name,
-      Value<String> platform,
-      Value<String?> appVersion,
-      Value<bool> isCurrentDevice,
-      Value<DateTime> registeredAt,
-      Value<DateTime> lastSeenAt,
-      Value<int> rowid,
-    });
+typedef $$DevicesTableCreateCompanionBuilder = DevicesCompanion Function({
+  required String id,
+  Value<String?> userId,
+  required String name,
+  required String platform,
+  Value<String?> appVersion,
+  Value<bool> isCurrentDevice,
+  Value<DateTime> registeredAt,
+  Value<DateTime> lastSeenAt,
+  Value<int> rowid,
+});
+typedef $$DevicesTableUpdateCompanionBuilder = DevicesCompanion Function({
+  Value<String> id,
+  Value<String?> userId,
+  Value<String> name,
+  Value<String> platform,
+  Value<String?> appVersion,
+  Value<bool> isCurrentDevice,
+  Value<DateTime> registeredAt,
+  Value<DateTime> lastSeenAt,
+  Value<int> rowid,
+});
 
 class $$DevicesTableFilterComposer
     extends Composer<_$AppDatabase, $DevicesTable> {
@@ -10003,46 +10001,44 @@ typedef $$ActivitySamplesTableProcessedTableManager =
       ActivitySample,
       PrefetchHooks Function()
     >;
-typedef $$GoalsTableCreateCompanionBuilder =
-    GoalsCompanion Function({
-      Value<String> id,
-      Value<String?> userId,
-      Value<String?> deviceId,
-      Value<DateTime> createdAt,
-      Value<DateTime> updatedAt,
-      Value<DateTime?> deletedAt,
-      Value<int> localRev,
-      Value<int?> serverRev,
-      Value<SyncState> syncState,
-      required RecordSource source,
-      required HealthMetricType metricType,
-      required double targetValue,
-      Value<GoalPeriod> period,
-      required DateTime startDate,
-      Value<DateTime?> endDate,
-      Value<bool> isActive,
-      Value<int> rowid,
-    });
-typedef $$GoalsTableUpdateCompanionBuilder =
-    GoalsCompanion Function({
-      Value<String> id,
-      Value<String?> userId,
-      Value<String?> deviceId,
-      Value<DateTime> createdAt,
-      Value<DateTime> updatedAt,
-      Value<DateTime?> deletedAt,
-      Value<int> localRev,
-      Value<int?> serverRev,
-      Value<SyncState> syncState,
-      Value<RecordSource> source,
-      Value<HealthMetricType> metricType,
-      Value<double> targetValue,
-      Value<GoalPeriod> period,
-      Value<DateTime> startDate,
-      Value<DateTime?> endDate,
-      Value<bool> isActive,
-      Value<int> rowid,
-    });
+typedef $$GoalsTableCreateCompanionBuilder = GoalsCompanion Function({
+  Value<String> id,
+  Value<String?> userId,
+  Value<String?> deviceId,
+  Value<DateTime> createdAt,
+  Value<DateTime> updatedAt,
+  Value<DateTime?> deletedAt,
+  Value<int> localRev,
+  Value<int?> serverRev,
+  Value<SyncState> syncState,
+  required RecordSource source,
+  required HealthMetricType metricType,
+  required double targetValue,
+  Value<GoalPeriod> period,
+  required DateTime startDate,
+  Value<DateTime?> endDate,
+  Value<bool> isActive,
+  Value<int> rowid,
+});
+typedef $$GoalsTableUpdateCompanionBuilder = GoalsCompanion Function({
+  Value<String> id,
+  Value<String?> userId,
+  Value<String?> deviceId,
+  Value<DateTime> createdAt,
+  Value<DateTime> updatedAt,
+  Value<DateTime?> deletedAt,
+  Value<int> localRev,
+  Value<int?> serverRev,
+  Value<SyncState> syncState,
+  Value<RecordSource> source,
+  Value<HealthMetricType> metricType,
+  Value<double> targetValue,
+  Value<GoalPeriod> period,
+  Value<DateTime> startDate,
+  Value<DateTime?> endDate,
+  Value<bool> isActive,
+  Value<int> rowid,
+});
 
 class $$GoalsTableFilterComposer extends Composer<_$AppDatabase, $GoalsTable> {
   $$GoalsTableFilterComposer({
@@ -10414,56 +10410,54 @@ typedef $$GoalsTableProcessedTableManager =
       Goal,
       PrefetchHooks Function()
     >;
-typedef $$PlacesTableCreateCompanionBuilder =
-    PlacesCompanion Function({
-      Value<String> id,
-      Value<String?> userId,
-      Value<String?> deviceId,
-      Value<DateTime> createdAt,
-      Value<DateTime> updatedAt,
-      Value<DateTime?> deletedAt,
-      Value<int> localRev,
-      Value<int?> serverRev,
-      Value<SyncState> syncState,
-      required RecordSource source,
-      required String name,
-      Value<PlaceCategory> category,
-      required double latitude,
-      required double longitude,
-      Value<double> radiusMeters,
-      Value<String> address,
-      Value<bool> currentlyInside,
-      Value<DateTime?> lastEnteredAt,
-      Value<DateTime?> lastExitedAt,
-      Value<DateTime?> stateAsOf,
-      Value<bool> notifyFriends,
-      Value<int> rowid,
-    });
-typedef $$PlacesTableUpdateCompanionBuilder =
-    PlacesCompanion Function({
-      Value<String> id,
-      Value<String?> userId,
-      Value<String?> deviceId,
-      Value<DateTime> createdAt,
-      Value<DateTime> updatedAt,
-      Value<DateTime?> deletedAt,
-      Value<int> localRev,
-      Value<int?> serverRev,
-      Value<SyncState> syncState,
-      Value<RecordSource> source,
-      Value<String> name,
-      Value<PlaceCategory> category,
-      Value<double> latitude,
-      Value<double> longitude,
-      Value<double> radiusMeters,
-      Value<String> address,
-      Value<bool> currentlyInside,
-      Value<DateTime?> lastEnteredAt,
-      Value<DateTime?> lastExitedAt,
-      Value<DateTime?> stateAsOf,
-      Value<bool> notifyFriends,
-      Value<int> rowid,
-    });
+typedef $$PlacesTableCreateCompanionBuilder = PlacesCompanion Function({
+  Value<String> id,
+  Value<String?> userId,
+  Value<String?> deviceId,
+  Value<DateTime> createdAt,
+  Value<DateTime> updatedAt,
+  Value<DateTime?> deletedAt,
+  Value<int> localRev,
+  Value<int?> serverRev,
+  Value<SyncState> syncState,
+  required RecordSource source,
+  required String name,
+  Value<PlaceCategory> category,
+  required double latitude,
+  required double longitude,
+  Value<double> radiusMeters,
+  Value<String> address,
+  Value<bool> currentlyInside,
+  Value<DateTime?> lastEnteredAt,
+  Value<DateTime?> lastExitedAt,
+  Value<DateTime?> stateAsOf,
+  Value<bool> notifyFriends,
+  Value<int> rowid,
+});
+typedef $$PlacesTableUpdateCompanionBuilder = PlacesCompanion Function({
+  Value<String> id,
+  Value<String?> userId,
+  Value<String?> deviceId,
+  Value<DateTime> createdAt,
+  Value<DateTime> updatedAt,
+  Value<DateTime?> deletedAt,
+  Value<int> localRev,
+  Value<int?> serverRev,
+  Value<SyncState> syncState,
+  Value<RecordSource> source,
+  Value<String> name,
+  Value<PlaceCategory> category,
+  Value<double> latitude,
+  Value<double> longitude,
+  Value<double> radiusMeters,
+  Value<String> address,
+  Value<bool> currentlyInside,
+  Value<DateTime?> lastEnteredAt,
+  Value<DateTime?> lastExitedAt,
+  Value<DateTime?> stateAsOf,
+  Value<bool> notifyFriends,
+  Value<int> rowid,
+});
 
 class $$PlacesTableFilterComposer
     extends Composer<_$AppDatabase, $PlacesTable> {
@@ -10925,48 +10919,46 @@ typedef $$PlacesTableProcessedTableManager =
       Place,
       PrefetchHooks Function()
     >;
-typedef $$TripsTableCreateCompanionBuilder =
-    TripsCompanion Function({
-      Value<String> id,
-      Value<String?> userId,
-      Value<String?> deviceId,
-      Value<DateTime> createdAt,
-      Value<DateTime> updatedAt,
-      Value<DateTime?> deletedAt,
-      Value<int> localRev,
-      Value<int?> serverRev,
-      Value<SyncState> syncState,
-      required RecordSource source,
-      Value<String> name,
-      required DateTime startedAt,
-      Value<DateTime?> endedAt,
-      Value<double> distanceMeters,
-      Value<int> pointCount,
-      Value<String?> startPlaceId,
-      Value<String?> endPlaceId,
-      Value<int> rowid,
-    });
-typedef $$TripsTableUpdateCompanionBuilder =
-    TripsCompanion Function({
-      Value<String> id,
-      Value<String?> userId,
-      Value<String?> deviceId,
-      Value<DateTime> createdAt,
-      Value<DateTime> updatedAt,
-      Value<DateTime?> deletedAt,
-      Value<int> localRev,
-      Value<int?> serverRev,
-      Value<SyncState> syncState,
-      Value<RecordSource> source,
-      Value<String> name,
-      Value<DateTime> startedAt,
-      Value<DateTime?> endedAt,
-      Value<double> distanceMeters,
-      Value<int> pointCount,
-      Value<String?> startPlaceId,
-      Value<String?> endPlaceId,
-      Value<int> rowid,
-    });
+typedef $$TripsTableCreateCompanionBuilder = TripsCompanion Function({
+  Value<String> id,
+  Value<String?> userId,
+  Value<String?> deviceId,
+  Value<DateTime> createdAt,
+  Value<DateTime> updatedAt,
+  Value<DateTime?> deletedAt,
+  Value<int> localRev,
+  Value<int?> serverRev,
+  Value<SyncState> syncState,
+  required RecordSource source,
+  Value<String> name,
+  required DateTime startedAt,
+  Value<DateTime?> endedAt,
+  Value<double> distanceMeters,
+  Value<int> pointCount,
+  Value<String?> startPlaceId,
+  Value<String?> endPlaceId,
+  Value<int> rowid,
+});
+typedef $$TripsTableUpdateCompanionBuilder = TripsCompanion Function({
+  Value<String> id,
+  Value<String?> userId,
+  Value<String?> deviceId,
+  Value<DateTime> createdAt,
+  Value<DateTime> updatedAt,
+  Value<DateTime?> deletedAt,
+  Value<int> localRev,
+  Value<int?> serverRev,
+  Value<SyncState> syncState,
+  Value<RecordSource> source,
+  Value<String> name,
+  Value<DateTime> startedAt,
+  Value<DateTime?> endedAt,
+  Value<double> distanceMeters,
+  Value<int> pointCount,
+  Value<String?> startPlaceId,
+  Value<String?> endPlaceId,
+  Value<int> rowid,
+});
 
 class $$TripsTableFilterComposer extends Composer<_$AppDatabase, $TripsTable> {
   $$TripsTableFilterComposer({
@@ -11779,40 +11771,38 @@ typedef $$WorkoutSessionsTableProcessedTableManager =
       WorkoutSession,
       PrefetchHooks Function()
     >;
-typedef $$NotesTableCreateCompanionBuilder =
-    NotesCompanion Function({
-      Value<String> id,
-      Value<String?> userId,
-      Value<String?> deviceId,
-      Value<DateTime> createdAt,
-      Value<DateTime> updatedAt,
-      Value<DateTime?> deletedAt,
-      Value<int> localRev,
-      Value<int?> serverRev,
-      Value<SyncState> syncState,
-      required RecordSource source,
-      required String content,
-      required DateTime noteDate,
-      Value<String> context,
-      Value<int> rowid,
-    });
-typedef $$NotesTableUpdateCompanionBuilder =
-    NotesCompanion Function({
-      Value<String> id,
-      Value<String?> userId,
-      Value<String?> deviceId,
-      Value<DateTime> createdAt,
-      Value<DateTime> updatedAt,
-      Value<DateTime?> deletedAt,
-      Value<int> localRev,
-      Value<int?> serverRev,
-      Value<SyncState> syncState,
-      Value<RecordSource> source,
-      Value<String> content,
-      Value<DateTime> noteDate,
-      Value<String> context,
-      Value<int> rowid,
-    });
+typedef $$NotesTableCreateCompanionBuilder = NotesCompanion Function({
+  Value<String> id,
+  Value<String?> userId,
+  Value<String?> deviceId,
+  Value<DateTime> createdAt,
+  Value<DateTime> updatedAt,
+  Value<DateTime?> deletedAt,
+  Value<int> localRev,
+  Value<int?> serverRev,
+  Value<SyncState> syncState,
+  required RecordSource source,
+  required String content,
+  required DateTime noteDate,
+  Value<String> context,
+  Value<int> rowid,
+});
+typedef $$NotesTableUpdateCompanionBuilder = NotesCompanion Function({
+  Value<String> id,
+  Value<String?> userId,
+  Value<String?> deviceId,
+  Value<DateTime> createdAt,
+  Value<DateTime> updatedAt,
+  Value<DateTime?> deletedAt,
+  Value<int> localRev,
+  Value<int?> serverRev,
+  Value<SyncState> syncState,
+  Value<RecordSource> source,
+  Value<String> content,
+  Value<DateTime> noteDate,
+  Value<String> context,
+  Value<int> rowid,
+});
 
 class $$NotesTableFilterComposer extends Composer<_$AppDatabase, $NotesTable> {
   $$NotesTableFilterComposer({

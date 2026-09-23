@@ -172,13 +172,12 @@ class LocationTrackingService {
       await _safeEnsureGeolocatorNotificationChannel();
     }
     _subscription =
-        Geolocator.getPositionStream(
-          locationSettings: _settingsFor(mode),
-        ).listen(
-          (position) => _enqueuePosition(position, mode),
-          onError: (e, st) => debugPrint('location stream error: $e\n$st'),
-          cancelOnError: false,
-        );
+        Geolocator.getPositionStream(locationSettings: _settingsFor(mode))
+            .listen(
+              (position) => _enqueuePosition(position, mode),
+              onError: (e, st) => debugPrint('location stream error: $e\n$st'),
+              cancelOnError: false,
+            );
     if (mode == MonitoringMode.move) {
       await _safeScheduleMoveReminder();
     }

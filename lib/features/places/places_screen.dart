@@ -233,9 +233,8 @@ class _PlaceEditorDialogState extends ConsumerState<_PlaceEditorDialog> {
       if (mounted) Navigator.of(context).pop();
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Could not save place: $e')));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Could not save place: $e')));
       }
     } finally {
       if (mounted) setState(() => _saving = false);

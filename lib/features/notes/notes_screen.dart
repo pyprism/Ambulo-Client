@@ -106,9 +106,8 @@ Future<void> _confirmDeleteNote(
     await ref.read(noteRepositoryProvider).deleteNote(id);
   } catch (e) {
     if (context.mounted) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Could not delete note: $e')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Could not delete note: $e')));
     }
   }
 }
@@ -158,9 +157,8 @@ class _NoteEditorDialogState extends ConsumerState<_NoteEditorDialog> {
 
   Future<void> _save() async {
     if (_content.text.trim().isEmpty) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Note cannot be empty')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Note cannot be empty')));
       return;
     }
     setState(() => _saving = true);
@@ -183,9 +181,8 @@ class _NoteEditorDialogState extends ConsumerState<_NoteEditorDialog> {
       if (mounted) Navigator.of(context).pop();
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Could not save note: $e')));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Could not save note: $e')));
       }
     } finally {
       if (mounted) setState(() => _saving = false);

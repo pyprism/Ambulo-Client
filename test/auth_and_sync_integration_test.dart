@@ -75,285 +75,274 @@ Future<bool> _serverReachable() async {
 }
 
 void main() {
-  test(
-    'register, login, device registration, and sync round-trip against the real server',
-    () async {
-      // Force TestWidgetsFlutterBinding's lazy init (which installs its own
-      // network-blocking HttpOverrides) to happen now, then clear it — so no
-      // later first-touch of a platform channel silently reinstalls it
-      // before the real HTTP calls below.
-      TestWidgetsFlutterBinding.ensureInitialized();
-      HttpOverrides.global = null;
+  test('register, login, device registration, and sync round-trip against the real server', () async {
+    // Force TestWidgetsFlutterBinding's lazy init (which installs its own
+    // network-blocking HttpOverrides) to happen now, then clear it — so no
+    // later first-touch of a platform channel silently reinstalls it
+    // before the real HTTP calls below.
+    TestWidgetsFlutterBinding.ensureInitialized();
+    HttpOverrides.global = null;
 
-      if (!await _serverReachable()) {
-        // ignore: avoid_print
-        print('Skipping: no live server at $_serverUrl');
-        return;
-      }
+    if (!await _serverReachable()) {
+      // ignore: avoid_print
+      print('Skipping: no live server at $_serverUrl');
+      return;
+    }
 
-      SharedPreferences.setMockInitialValues({});
+    SharedPreferences.setMockInitialValues({});
 
-      final container = ProviderContainer(
-        overrides: [
-          tokenStorageProvider.overrideWithValue(_FakeTokenStorage()),
-          appDatabaseProvider.overrideWithValue(
-            AppDatabase.forTesting(NativeDatabase.memory()),
-          ),
-        ],
-      );
-      addTearDown(container.dispose);
-
-      await container
-          .read(serverConfigProvider.notifier)
-          .setServerAddress(_serverUrl);
-
-      final uniqueSuffix = DateTime.now().microsecondsSinceEpoch;
-      final username = 'flutter_it_$uniqueSuffix';
-
-      final registerError = await container
-          .read(authControllerProvider.notifier)
-          .register(
-            username: username,
-            email: '$username@example.com',
-            password: 'Sup3rSecretPass!',
-          );
-      expect(registerError, isNull, reason: 'register failed: $registerError');
-
-      final authedUser = container.read(authControllerProvider).value;
-      expect(authedUser, isNotNull);
-      expect(authedUser!.username, username);
-
-      // Seed one pending location point and run a real sync.
-      final db = container.read(appDatabaseProvider);
-      await db
-          .into(db.locationPoints)
-          .insert(
-            LocationPointsCompanion.insert(
-              latitude: 12.34,
-              longitude: 56.78,
-              recordedAt: DateTime.now().toUtc(),
-              monitoringMode: MonitoringMode.significant,
-              syncState: const Value(SyncState.pendingUpload),
-              source: RecordSource.location,
-            ),
-          );
-
-      final beforeCounts = await container
-          .read(syncRepositoryProvider)
-          .counts();
-      expect(beforeCounts.pending, 1);
-
-      final syncError = await container
-          .read(syncControllerProvider.notifier)
-          .syncNow();
-      expect(syncError, isNull, reason: 'sync failed: $syncError');
-
-      final afterCounts = container.read(syncControllerProvider).value!;
-      expect(afterCounts.pending, 0);
-      expect(afterCounts.failed, 0);
-      expect(afterCounts.conflicts, 0);
-      expect(afterCounts.lastSyncAt, isNotNull);
-
-      final rows = await db.select(db.locationPoints).get();
-      expect(rows.single.syncState, SyncState.synced);
-      expect(rows.single.serverRev, isNotNull);
-
-      // Logout should blacklist the refresh token server-side without
-      // throwing, and clear local auth state.
-      await container.read(authControllerProvider.notifier).logout();
-      expect(container.read(authControllerProvider).value, isNull);
-    },
-  );
-
-  test(
-    'conflict detection and "keep mine" resolution against the real server',
-    () async {
-      TestWidgetsFlutterBinding.ensureInitialized();
-      HttpOverrides.global = null;
-
-      if (!await _serverReachable()) {
-        // ignore: avoid_print
-        print('Skipping: no live server at $_serverUrl');
-        return;
-      }
-
-      SharedPreferences.setMockInitialValues({});
-
-      final container = ProviderContainer(
-        overrides: [
-          tokenStorageProvider.overrideWithValue(_FakeTokenStorage()),
-          appDatabaseProvider.overrideWithValue(
-            AppDatabase.forTesting(NativeDatabase.memory()),
-          ),
-        ],
-      );
-      addTearDown(container.dispose);
-
-      await container
-          .read(serverConfigProvider.notifier)
-          .setServerAddress(_serverUrl);
-
-      final uniqueSuffix = DateTime.now().microsecondsSinceEpoch;
-      final username = 'flutter_it_conflict_$uniqueSuffix';
-      final registerError = await container
-          .read(authControllerProvider.notifier)
-          .register(
-            username: username,
-            email: '$username@example.com',
-            password: 'Sup3rSecretPass!',
-          );
-      expect(registerError, isNull, reason: 'register failed: $registerError');
-
-      final db = container.read(appDatabaseProvider);
-      await db
-          .into(db.locationPoints)
-          .insert(
-            LocationPointsCompanion.insert(
-              latitude: 1,
-              longitude: 1,
-              recordedAt: DateTime.now().toUtc(),
-              monitoringMode: MonitoringMode.significant,
-              syncState: const Value(SyncState.pendingUpload),
-              source: RecordSource.location,
-            ),
-          );
-      final pointId = (await db.select(db.locationPoints).getSingle()).id;
-
-      // Get it synced once so it has a real server_rev.
-      final firstSyncError = await container
-          .read(syncControllerProvider.notifier)
-          .syncNow();
-      expect(
-        firstSyncError,
-        isNull,
-        reason: 'initial sync failed: $firstSyncError',
-      );
-      final syncedRow = await (db.select(
-        db.locationPoints,
-      )..where((t) => t.id.equals(pointId))).getSingle();
-      expect(syncedRow.syncState, SyncState.synced);
-      final syncedServerRev = syncedRow.serverRev;
-      expect(syncedServerRev, isNotNull);
-
-      // Simulate a second device changing this record server-side (accepted,
-      // bumps server_rev) without this client knowing — reuse the same
-      // authenticated Dio client to make that write.
-      final otherDeviceResponse = await container
-          .read(dioProvider)
-          .post(
-            '/api/sync/upload/',
-            data: {
-              'records': {
-                'location_point': [
-                  {
-                    'id': pointId,
-                    'local_rev': 1,
-                    'base_server_rev': syncedServerRev,
-                    'sync_state': 'synced',
-                    'source': 'location',
-                    'latitude': 9.0,
-                    'longitude': 9.0,
-                    'recorded_at': DateTime.now().toUtc().toIso8601String(),
-                    'connectivity': 'wifi',
-                    'monitoring_mode': 'significant',
-                  },
-                ],
-              },
-            },
-          );
-      final otherDeviceBucket =
-          (otherDeviceResponse.data as Map<String, dynamic>)['location_point']
-              as Map<String, dynamic>;
-      expect((otherDeviceBucket['accepted'] as List), contains(pointId));
-
-      // Now make a conflicting local edit (still holding the stale server_rev)
-      // and try to sync it — the server must reject it as a conflict.
-      await (db.update(
-        db.locationPoints,
-      )..where((t) => t.id.equals(pointId))).write(
-        const LocationPointsCompanion(
-          latitude: Value(5.0),
-          syncState: Value(SyncState.pendingUpload),
+    final container = ProviderContainer(
+      overrides: [
+        tokenStorageProvider.overrideWithValue(_FakeTokenStorage()),
+        appDatabaseProvider.overrideWithValue(
+          AppDatabase.forTesting(NativeDatabase.memory()),
         ),
-      );
+      ],
+    );
+    addTearDown(container.dispose);
 
-      final conflictSyncError = await container
-          .read(syncControllerProvider.notifier)
-          .syncNow();
-      expect(conflictSyncError, isNull);
+    await container
+        .read(serverConfigProvider.notifier)
+        .setServerAddress(_serverUrl);
 
-      final conflicted = await container
-          .read(syncRepositoryProvider)
-          .allConflicts();
-      expect(conflicted.map((c) => c.id), contains(pointId));
+    final uniqueSuffix = DateTime.now().microsecondsSinceEpoch;
+    final username = 'flutter_it_$uniqueSuffix';
 
-      // Resolve by keeping our version — must force-overwrite and end up synced.
-      final resolveError = await container
-          .read(syncControllerProvider.notifier)
-          .resolveKeepMine('location_point', pointId);
-      expect(
-        resolveError,
-        isNull,
-        reason: 'resolveKeepMine failed: $resolveError',
-      );
+    final registerError = await container
+        .read(authControllerProvider.notifier)
+        .register(
+          username: username,
+          email: '$username@example.com',
+          password: 'Sup3rSecretPass!',
+        );
+    expect(registerError, isNull, reason: 'register failed: $registerError');
 
-      final resolvedRow = await (db.select(
-        db.locationPoints,
-      )..where((t) => t.id.equals(pointId))).getSingle();
-      expect(resolvedRow.syncState, SyncState.synced);
-      expect(resolvedRow.latitude, 5.0);
-    },
-  );
+    final authedUser = container.read(authControllerProvider).value;
+    expect(authedUser, isNotNull);
+    expect(authedUser!.username, username);
 
-  test(
-    'registration validation errors surface the real backend detail, not just the generic summary',
-    () async {
-      TestWidgetsFlutterBinding.ensureInitialized();
-      HttpOverrides.global = null;
-
-      if (!await _serverReachable()) {
-        // ignore: avoid_print
-        print('Skipping: no live server at $_serverUrl');
-        return;
-      }
-
-      SharedPreferences.setMockInitialValues({});
-
-      final container = ProviderContainer(
-        overrides: [
-          tokenStorageProvider.overrideWithValue(_FakeTokenStorage()),
-          appDatabaseProvider.overrideWithValue(
-            AppDatabase.forTesting(NativeDatabase.memory()),
+    // Seed one pending location point and run a real sync.
+    final db = container.read(appDatabaseProvider);
+    await db
+        .into(db.locationPoints)
+        .insert(
+          LocationPointsCompanion.insert(
+            latitude: 12.34,
+            longitude: 56.78,
+            recordedAt: DateTime.now().toUtc(),
+            monitoringMode: MonitoringMode.significant,
+            syncState: const Value(SyncState.pendingUpload),
+            source: RecordSource.location,
           ),
-        ],
-      );
-      addTearDown(container.dispose);
+        );
 
-      await container
-          .read(serverConfigProvider.notifier)
-          .setServerAddress(_serverUrl);
+    final beforeCounts = await container.read(syncRepositoryProvider).counts();
+    expect(beforeCounts.pending, 1);
 
-      final uniqueSuffix = DateTime.now().microsecondsSinceEpoch;
-      final username = 'flutter_it_weakpw_$uniqueSuffix';
+    final syncError = await container
+        .read(syncControllerProvider.notifier)
+        .syncNow();
+    expect(syncError, isNull, reason: 'sync failed: $syncError');
 
-      // The server wraps this as {"message": "Validation failed.",
-      // "errors": {"password": ["This password is too common."]}} — the bug
-      // was returning only "Validation failed." and dropping the specific
-      // reason.
-      final registerError = await container
-          .read(authControllerProvider.notifier)
-          .register(
-            username: username,
-            email: '$username@example.com',
-            password: 'password',
-          );
+    final afterCounts = container.read(syncControllerProvider).value!;
+    expect(afterCounts.pending, 0);
+    expect(afterCounts.failed, 0);
+    expect(afterCounts.conflicts, 0);
+    expect(afterCounts.lastSyncAt, isNotNull);
 
-      expect(registerError, isNotNull);
-      expect(registerError, isNot(equals('Validation failed.')));
-      expect(registerError, contains('password'));
-      expect(registerError, contains('too common'));
-    },
-  );
+    final rows = await db.select(db.locationPoints).get();
+    expect(rows.single.syncState, SyncState.synced);
+    expect(rows.single.serverRev, isNotNull);
+
+    // Logout should blacklist the refresh token server-side without
+    // throwing, and clear local auth state.
+    await container.read(authControllerProvider.notifier).logout();
+    expect(container.read(authControllerProvider).value, isNull);
+  });
+
+  test('conflict detection and "keep mine" resolution against the real server', () async {
+    TestWidgetsFlutterBinding.ensureInitialized();
+    HttpOverrides.global = null;
+
+    if (!await _serverReachable()) {
+      // ignore: avoid_print
+      print('Skipping: no live server at $_serverUrl');
+      return;
+    }
+
+    SharedPreferences.setMockInitialValues({});
+
+    final container = ProviderContainer(
+      overrides: [
+        tokenStorageProvider.overrideWithValue(_FakeTokenStorage()),
+        appDatabaseProvider.overrideWithValue(
+          AppDatabase.forTesting(NativeDatabase.memory()),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    await container
+        .read(serverConfigProvider.notifier)
+        .setServerAddress(_serverUrl);
+
+    final uniqueSuffix = DateTime.now().microsecondsSinceEpoch;
+    final username = 'flutter_it_conflict_$uniqueSuffix';
+    final registerError = await container
+        .read(authControllerProvider.notifier)
+        .register(
+          username: username,
+          email: '$username@example.com',
+          password: 'Sup3rSecretPass!',
+        );
+    expect(registerError, isNull, reason: 'register failed: $registerError');
+
+    final db = container.read(appDatabaseProvider);
+    await db
+        .into(db.locationPoints)
+        .insert(
+          LocationPointsCompanion.insert(
+            latitude: 1,
+            longitude: 1,
+            recordedAt: DateTime.now().toUtc(),
+            monitoringMode: MonitoringMode.significant,
+            syncState: const Value(SyncState.pendingUpload),
+            source: RecordSource.location,
+          ),
+        );
+    final pointId = (await db.select(db.locationPoints).getSingle()).id;
+
+    // Get it synced once so it has a real server_rev.
+    final firstSyncError = await container
+        .read(syncControllerProvider.notifier)
+        .syncNow();
+    expect(
+      firstSyncError,
+      isNull,
+      reason: 'initial sync failed: $firstSyncError',
+    );
+    final syncedRow = await (db.select(
+      db.locationPoints,
+    )..where((t) => t.id.equals(pointId))).getSingle();
+    expect(syncedRow.syncState, SyncState.synced);
+    final syncedServerRev = syncedRow.serverRev;
+    expect(syncedServerRev, isNotNull);
+
+    // Simulate a second device changing this record server-side (accepted,
+    // bumps server_rev) without this client knowing — reuse the same
+    // authenticated Dio client to make that write.
+    final otherDeviceResponse = await container
+        .read(dioProvider)
+        .post(
+          '/api/sync/upload/',
+          data: {
+            'records': {
+              'location_point': [
+                {
+                  'id': pointId,
+                  'local_rev': 1,
+                  'base_server_rev': syncedServerRev,
+                  'sync_state': 'synced',
+                  'source': 'location',
+                  'latitude': 9.0,
+                  'longitude': 9.0,
+                  'recorded_at': DateTime.now().toUtc().toIso8601String(),
+                  'connectivity': 'wifi',
+                  'monitoring_mode': 'significant',
+                },
+              ],
+            },
+          },
+        );
+    final otherDeviceBucket =
+        (otherDeviceResponse.data as Map<String, dynamic>)['location_point']
+            as Map<String, dynamic>;
+    expect((otherDeviceBucket['accepted'] as List), contains(pointId));
+
+    // Now make a conflicting local edit (still holding the stale server_rev)
+    // and try to sync it — the server must reject it as a conflict.
+    await (db.update(
+      db.locationPoints,
+    )..where((t) => t.id.equals(pointId))).write(
+      const LocationPointsCompanion(
+        latitude: Value(5.0),
+        syncState: Value(SyncState.pendingUpload),
+      ),
+    );
+
+    final conflictSyncError = await container
+        .read(syncControllerProvider.notifier)
+        .syncNow();
+    expect(conflictSyncError, isNull);
+
+    final conflicted = await container
+        .read(syncRepositoryProvider)
+        .allConflicts();
+    expect(conflicted.map((c) => c.id), contains(pointId));
+
+    // Resolve by keeping our version — must force-overwrite and end up synced.
+    final resolveError = await container
+        .read(syncControllerProvider.notifier)
+        .resolveKeepMine('location_point', pointId);
+    expect(
+      resolveError,
+      isNull,
+      reason: 'resolveKeepMine failed: $resolveError',
+    );
+
+    final resolvedRow = await (db.select(
+      db.locationPoints,
+    )..where((t) => t.id.equals(pointId))).getSingle();
+    expect(resolvedRow.syncState, SyncState.synced);
+    expect(resolvedRow.latitude, 5.0);
+  });
+
+  test('registration validation errors surface the real backend detail, not just the generic summary', () async {
+    TestWidgetsFlutterBinding.ensureInitialized();
+    HttpOverrides.global = null;
+
+    if (!await _serverReachable()) {
+      // ignore: avoid_print
+      print('Skipping: no live server at $_serverUrl');
+      return;
+    }
+
+    SharedPreferences.setMockInitialValues({});
+
+    final container = ProviderContainer(
+      overrides: [
+        tokenStorageProvider.overrideWithValue(_FakeTokenStorage()),
+        appDatabaseProvider.overrideWithValue(
+          AppDatabase.forTesting(NativeDatabase.memory()),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    await container
+        .read(serverConfigProvider.notifier)
+        .setServerAddress(_serverUrl);
+
+    final uniqueSuffix = DateTime.now().microsecondsSinceEpoch;
+    final username = 'flutter_it_weakpw_$uniqueSuffix';
+
+    // The server wraps this as {"message": "Validation failed.",
+    // "errors": {"password": ["This password is too common."]}} — the bug
+    // was returning only "Validation failed." and dropping the specific
+    // reason.
+    final registerError = await container
+        .read(authControllerProvider.notifier)
+        .register(
+          username: username,
+          email: '$username@example.com',
+          password: 'password',
+        );
+
+    expect(registerError, isNotNull);
+    expect(registerError, isNot(equals('Validation failed.')));
+    expect(registerError, contains('password'));
+    expect(registerError, contains('too common'));
+  });
 
   test('place and trip sync round-trip against the real server', () async {
     TestWidgetsFlutterBinding.ensureInitialized();
