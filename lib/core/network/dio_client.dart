@@ -44,7 +44,7 @@ class _AuthInterceptor extends Interceptor {
   final String _baseUrl;
   final TokenStorage _tokenStorage;
   final DeviceRepository _deviceRepository;
-  Future<bool>? _refreshInFlight;
+  Future<bool?>? _refreshInFlight;
 
   @override
   Future<void> onRequest(
@@ -76,6 +76,12 @@ class _AuthInterceptor extends Interceptor {
     }
 
     final refreshed = await _refresh();
+    if (refreshed == null) {
+      // Transient failure (offline, timeout, 5xx): keep tokens, surface the
+      // original error. Only a server-side rejection signs the user out.
+      handler.next(err);
+      return;
+    }
     if (!refreshed) {
       await _tokenStorage.clear();
       unawaited(_ref.read(authControllerProvider.notifier).handleSignedOut());
@@ -96,13 +102,14 @@ class _AuthInterceptor extends Interceptor {
     }
   }
 
-  Future<bool> _refresh() {
+  /// true = refreshed, false = refresh token rejected, null = couldn't tell.
+  Future<bool?> _refresh() {
     return _refreshInFlight ??= _doRefresh().whenComplete(() {
       _refreshInFlight = null;
     });
   }
 
-  Future<bool> _doRefresh() async {
+  Future<bool?> _doRefresh() async {
     final refreshToken = await _tokenStorage.readRefreshToken();
     if (refreshToken == null) return false;
     try {
@@ -123,8 +130,11 @@ class _AuthInterceptor extends Interceptor {
         await _tokenStorage.saveAccessToken(newAccess);
       }
       return true;
+    } on DioException catch (e) {
+      final status = e.response?.statusCode;
+      return status == 400 || status == 401 || status == 403 ? false : null;
     } catch (_) {
-      return false;
+      return null;
     }
   }
 }
