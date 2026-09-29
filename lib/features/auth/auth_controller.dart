@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -16,6 +17,8 @@ import 'auth_user.dart';
 /// Null = signed out / local-only. Non-null = signed in to the configured
 /// BYO-server (register/login against it).
 class AuthController extends AsyncNotifier<AuthUser?> {
+  static const _cachedUserKey = 'auth_cached_user';
+
   TokenStorage get _tokenStorage => ref.read(tokenStorageProvider);
 
   @override
@@ -29,18 +32,39 @@ class AuthController extends AsyncNotifier<AuthUser?> {
     });
     final token = await _tokenStorage.readAccessToken();
     if (token == null) return null;
-    final user = await _fetchMe();
-    if (user != null) {
-      unawaited(ref.read(syncControllerProvider.notifier).syncNow());
+    try {
+      final user = await _fetchMe();
+      if (user != null) {
+        unawaited(ref.read(syncControllerProvider.notifier).syncNow());
+      }
+      return user;
+    } on DioException {
+      // Offline / server unreachable on cold start: tokens are still valid,
+      // so stay signed in with the last-known profile instead of appearing
+      // signed out.
+      return _readCachedUser();
     }
-    return user;
+  }
+
+  Future<AuthUser?> _readCachedUser() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_cachedUserKey);
+      if (raw == null) return null;
+      return AuthUser.fromJson(jsonDecode(raw) as Map<String, dynamic>);
+    } catch (_) {
+      return null;
+    }
   }
 
   Future<AuthUser?> _fetchMe() async {
     try {
       final dio = ref.read(dioProvider);
       final response = await dio.get('/api/accounts/users/me/');
-      return AuthUser.fromJson(response.data as Map<String, dynamic>);
+      final data = response.data as Map<String, dynamic>;
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_cachedUserKey, jsonEncode(data));
+      return AuthUser.fromJson(data);
     } on DioException catch (e) {
       if (e.response?.statusCode == 401 || e.response?.statusCode == 403) {
         await _tokenStorage.clear();
@@ -135,6 +159,7 @@ class AuthController extends AsyncNotifier<AuthUser?> {
     await prefs.remove('profile_date_of_birth');
     await prefs.remove('profile_biological_sex');
     await prefs.remove('profile_pending_upload');
+    await prefs.remove(_cachedUserKey);
     if (clearTokens) await _tokenStorage.clear();
   }
 
