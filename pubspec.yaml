@@ -49,7 +49,7 @@ dev_dependencies:
 
   flutter_lints: ^6.0.0
   build_runner: ^2.16.1
-  drift_dev: ^2.34.5
+  drift_dev: ^2.35.0
   riverpod_generator: ^4.0.9
   freezed: ^4.0.0
   json_serializable: ^6.14.1
