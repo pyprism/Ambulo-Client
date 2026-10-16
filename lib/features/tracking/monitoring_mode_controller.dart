@@ -39,9 +39,6 @@ class MonitoringModeController extends Notifier<MonitoringMode> {
   }
 
   Future<void> setMode(MonitoringMode mode) async {
-    state = mode;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_prefsKey, mode.name);
     if (mode == MonitoringMode.move) {
       // Ask here, not when the reminder is actually scheduled — this call
       // always comes from a foreground user tap, whereas the schedule is
@@ -51,10 +48,19 @@ class MonitoringModeController extends Notifier<MonitoringMode> {
       //
       // Best-effort: a missing notification plugin channel (e.g. under
       // test, or an unsupported platform) must never block picking Move.
+      //
+      // Must finish *before* `state` changes: that change triggers
+      // `LocationTrackingService.applyMode`, which shows the location
+      // permission dialog. Android allows one permission request at a time,
+      // so overlapping them cancels the location request and Move silently
+      // never starts collecting.
       try {
         await NotificationService.instance.requestPermission();
       } catch (_) {}
     }
+    state = mode;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_prefsKey, mode.name);
   }
 }
 
